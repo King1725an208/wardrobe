@@ -7,6 +7,8 @@ export default function SettingsPage() {
   const [demoMsg, setDemoMsg] = useState('')
   const [key, setKey] = useState(settings.doubaoApiKey ?? '')
   const [model, setModel] = useState(settings.doubaoModel ?? 'doubao-seed-2.1-turbo')
+  const [proxy, setProxy] = useState(settings.aiProxyUrl ?? '')
+  const [removeBg, setRemoveBg] = useState(settings.removeBg !== false)
   const [oftenDays, setOftenDays] = useState(settings.oftenDays ?? 90)
   const [oftenCount, setOftenCount] = useState(settings.oftenCount ?? 3)
   const [neverDays, setNeverDays] = useState(settings.neverDays ?? 365)
@@ -16,6 +18,8 @@ export default function SettingsPage() {
       ...settings,
       doubaoApiKey: key || undefined,
       doubaoModel: model || undefined,
+      aiProxyUrl: proxy.trim() || undefined,
+      removeBg,
       oftenDays,
       oftenCount,
       neverDays,
@@ -38,6 +42,12 @@ export default function SettingsPage() {
       />
       <label>模型</label>
       <input value={model} onChange={(e) => setModel(e.target.value)} />
+      <label className="row">
+        <input type="checkbox" checked={removeBg} onChange={(e) => setRemoveBg(e.target.checked)} />
+        录入时自动去背景（Seedream，每张约 1 分钟、消耗 token）
+      </label>
+      <label>AI 中转地址（必填；手机无法直连豆包，需经中转，见 server/README.md）</label>
+      <input value={proxy} onChange={(e) => setProxy(e.target.value)} placeholder="https://xxx.workers.dev" />
 
       <h2>常穿度规则</h2>
       <label>近 N 天穿够次数算「经常」</label>

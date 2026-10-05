@@ -27,6 +27,7 @@ export const WEAR_LEVELS: { key: WearLevel; label: string }[] = [
 export interface WardrobeItem {
   id: string
   photo: Blob
+  originalPhoto?: Blob // 去背景前的原图
   category: Category
   brand?: string
   purchasedAt?: string // YYYY-MM
@@ -61,7 +62,10 @@ export interface OutfitRecord {
 
 export interface Settings {
   doubaoApiKey?: string
-  doubaoModel?: string // 默认 doubao-vision-pro-32k
+  doubaoModel?: string // 默认 doubao-seed-2.1-turbo
+  aiProxyUrl?: string // 留空用默认代理
+  removeBg?: boolean // 录入时用 Seedream 去背景（默认开）
+  bgModel?: string // 默认 doubao-seedream-5-0-pro
   oftenDays?: number // 默认 90
   oftenCount?: number // 默认 3
   rarelyDays?: number // 默认 180

@@ -29,13 +29,24 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   })
 }
 
-/** 调豆包视觉模型识别衣服属性；无 key 或失败时返回 null（调用方回退手动填写） */
+/** 浏览器直连方舟会被 CORS 拦截，所以经由我们自己的代理转发（代理不保存 key） */
+export const DEFAULT_AI_PROXY = ''
+
+function proxyBase(s: Settings): string {
+  const base = (s.aiProxyUrl || DEFAULT_AI_PROXY).trim().replace(/\/$/, '')
+  if (!base) throw new Error('请先在「设置」页填写 AI 中转地址')
+  return base
+}
+
+/** 调豆包视觉模型识别衣服属性；无 key 返回 null，失败抛出带中文说明的 Error */
 export async function identifyClothing(photo: Blob, s: Settings): Promise<AiGuess | null> {
   if (!s.doubaoApiKey) return null
   const model = s.doubaoModel || 'doubao-seed-2.1-turbo'
+  const base = proxyBase(s)
   const image = await blobToDataUrl(photo)
+  let resp: Response
   try {
-    const resp = await fetch('https://ark.cn-beijing.volces.com/api/plan/v3/chat/completions', {
+    resp = await fetch(`${base}/ark/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -57,21 +68,82 @@ export async function identifyClothing(photo: Blob, s: Settings): Promise<AiGues
         ],
       }),
     })
-    if (!resp.ok) return null
-    const data = await resp.json()
-    const text: string = data?.choices?.[0]?.message?.content ?? ''
-    const m = text.match(/\{[\s\S]*\}/)
-    if (!m) return null
-    const raw = JSON.parse(m[0])
+  } catch {
+    throw new Error('网络请求失败（无法连接 AI 代理）')
+  }
+  if (!resp.ok) {
+    let detail = ''
+    try {
+      const j = await resp.json()
+      detail = j?.error?.message || j?.error || ''
+    } catch {
+      /* ignore */
+    }
+    if (resp.status === 401) throw new Error('API Key 无效或没权限' + (detail ? `：${detail}` : ''))
+    throw new Error(`AI 接口返回 ${resp.status}` + (detail ? `：${detail}` : ''))
+  }
+  const data = await resp.json()
+  const text: string = data?.choices?.[0]?.message?.content ?? ''
+  const m = text.match(/\{[\s\S]*\}/)
+  if (!m) throw new Error('AI 没有返回可解析的结果')
+  let raw: Record<string, unknown>
+  try {
+    raw = JSON.parse(m[0])
+  } catch {
+    throw new Error('AI 返回的结果格式不对')
+  }
+  {
     const guess: AiGuess = {}
-    if (VALID_CATEGORIES.includes(raw.category)) guess.category = raw.category
-    if (VALID_SEASONS.includes(raw.season)) guess.season = raw.season
+    if (VALID_CATEGORIES.includes(raw.category as Category)) guess.category = raw.category as Category
+    if (VALID_SEASONS.includes(raw.season as Season)) guess.season = raw.season as Season
     if (Array.isArray(raw.colors)) guess.colors = raw.colors.map(String).slice(0, 3)
     if (Array.isArray(raw.styles)) guess.styles = raw.styles.map(String).slice(0, 3)
     if (raw.brand) guess.brand = String(raw.brand)
     if (raw.material) guess.material = String(raw.material)
     return guess
-  } catch {
-    return null
   }
+}
+
+/** 用 Seedream 把衣服抠到纯白背景上；返回新的图片 Blob */
+export async function removeBackground(photo: Blob, s: Settings): Promise<Blob> {
+  if (!s.doubaoApiKey) throw new Error('未填写 API Key')
+  const base = proxyBase(s)
+  const image = await blobToDataUrl(photo)
+  let resp: Response
+  try {
+    resp = await fetch(`${base}/ark/images/generations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${s.doubaoApiKey}`,
+      },
+      body: JSON.stringify({
+        model: s.bgModel || 'doubao-seedream-5-0-pro',
+        prompt: '去掉背景，只保留这件衣物/鞋/包，平铺放在纯白色背景正中，保持款式、颜色、细节完全不变，不要添加任何东西',
+        image,
+        response_format: 'b64_json',
+        size: '1K',
+        watermark: false,
+      }),
+    })
+  } catch {
+    throw new Error('网络请求失败（无法连接 AI 代理）')
+  }
+  if (!resp.ok) {
+    let detail = ''
+    try {
+      const j = await resp.json()
+      detail = j?.error?.message || ''
+    } catch {
+      /* ignore */
+    }
+    throw new Error(`去背景接口返回 ${resp.status}` + (detail ? `：${detail}` : ''))
+  }
+  const data = await resp.json()
+  const b64: string | undefined = data?.data?.[0]?.b64_json
+  if (!b64) throw new Error('去背景没有返回图片')
+  const bin = atob(b64)
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  return new Blob([bytes], { type: 'image/jpeg' })
 }

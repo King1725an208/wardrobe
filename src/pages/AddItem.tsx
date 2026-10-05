@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { identifyClothing } from '../ai'
+import { identifyClothing, removeBackground } from '../ai'
 import { useStore } from '../store'
 import { CATEGORIES, SEASONS, STYLE_TAGS, type Category, type Season } from '../types'
 import { useBlobUrl } from '../useBlobUrl'
@@ -9,7 +9,12 @@ export default function AddItem({ onDone }: { onDone: () => void }) {
   const camRef = useRef<HTMLInputElement>(null)
   const galRef = useRef<HTMLInputElement>(null)
   const [photo, setPhoto] = useState<Blob>()
+  const [cutout, setCutout] = useState<Blob>()
+  const [useCutout, setUseCutout] = useState(true)
+  const [bgState, setBgState] = useState<'idle' | 'loading' | 'done' | 'failed'>('idle')
+  const [bgError, setBgError] = useState('')
   const [aiState, setAiState] = useState<'idle' | 'loading' | 'done' | 'failed'>('idle')
+  const [aiError, setAiError] = useState('')
   const [category, setCategory] = useState<Category>('top')
   const [brand, setBrand] = useState('')
   const [purchasedAt, setPurchasedAt] = useState('')
@@ -19,14 +24,39 @@ export default function AddItem({ onDone }: { onDone: () => void }) {
   const [season, setSeason] = useState<Season>('春秋')
   const [material, setMaterial] = useState('')
   const [note, setNote] = useState('')
-  const url = useBlobUrl(photo)
+  const shown = useCutout && cutout ? cutout : photo
+  const url = useBlobUrl(shown)
 
   const onPhoto = async (f: File | undefined) => {
     if (!f) return
     setPhoto(f)
+    setCutout(undefined)
+    setUseCutout(true)
+    setBgState('idle')
     if (!settings.doubaoApiKey) return
+    if (settings.removeBg !== false) {
+      setBgState('loading')
+      setBgError('')
+      removeBackground(f, settings)
+        .then((b) => {
+          setCutout(b)
+          setBgState('done')
+        })
+        .catch((e) => {
+          setBgError(e instanceof Error ? e.message : String(e))
+          setBgState('failed')
+        })
+    }
     setAiState('loading')
-    const g = await identifyClothing(f, settings)
+    setAiError('')
+    let g
+    try {
+      g = await identifyClothing(f, settings)
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : String(e))
+      setAiState('failed')
+      return
+    }
     if (!g) {
       setAiState('failed')
       return
@@ -42,8 +72,10 @@ export default function AddItem({ onDone }: { onDone: () => void }) {
 
   const save = async () => {
     if (!photo) return
+    const final = useCutout && cutout ? cutout : photo
     await add({
-      photo,
+      photo: final,
+      originalPhoto: final !== photo ? photo : undefined,
       category,
       brand: brand || undefined,
       purchasedAt: purchasedAt || undefined,
@@ -64,13 +96,23 @@ export default function AddItem({ onDone }: { onDone: () => void }) {
       <input ref={camRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => onPhoto(e.target.files?.[0])} />
       <input ref={galRef} type="file" accept="image/*" hidden onChange={(e) => onPhoto(e.target.files?.[0])} />
       {url && <img className="preview" src={url} alt="" />}
+      {bgState === 'loading' && <p className="muted">去背景中（约 1 分钟）…</p>}
+      {bgState === 'failed' && <p className="muted">去背景失败，使用原图{bgError ? `（${bgError}）` : ''}</p>}
+      {cutout && (
+        <div className="chips">
+          <button className={useCutout ? 'on' : ''} onClick={() => setUseCutout(true)}>白底图</button>
+          <button className={!useCutout ? 'on' : ''} onClick={() => setUseCutout(false)}>原图</button>
+        </div>
+      )}
       <div className="photo-row">
         <button className="photo-btn" onClick={() => camRef.current?.click()}>📷 拍照</button>
         <button className="photo-btn" onClick={() => galRef.current?.click()}>🖼️ 从相册选</button>
       </div>
       {aiState === 'loading' && <p className="muted">AI 识别中…</p>}
       {aiState === 'done' && <p className="ok">AI 已预填，请确认或修改</p>}
-      {aiState === 'failed' && <p className="muted">AI 识别失败，请手动填写</p>}
+      {aiState === 'failed' && (
+        <p className="muted">AI 识别失败，请手动填写{aiError ? `（${aiError}）` : ''}</p>
+      )}
       {!settings.doubaoApiKey && photo && (
         <p className="muted">未配置豆包 API Key，请手动填写（可在设置里配置开启 AI 预填）</p>
       )}
