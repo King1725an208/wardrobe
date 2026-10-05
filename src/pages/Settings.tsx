@@ -4,7 +4,7 @@ import { useStore } from '../store'
 export default function SettingsPage() {
   const { settings, saveSettings, items } = useStore()
   const [key, setKey] = useState(settings.doubaoApiKey ?? '')
-  const [model, setModel] = useState(settings.doubaoModel ?? 'doubao-vision-pro-32k-241028')
+  const [model, setModel] = useState(settings.doubaoModel ?? 'doubao-seed-2.1-turbo')
   const [oftenDays, setOftenDays] = useState(settings.oftenDays ?? 90)
   const [oftenCount, setOftenCount] = useState(settings.oftenCount ?? 3)
   const [neverDays, setNeverDays] = useState(settings.neverDays ?? 365)

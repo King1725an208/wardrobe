@@ -32,10 +32,10 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 /** 调豆包视觉模型识别衣服属性；无 key 或失败时返回 null（调用方回退手动填写） */
 export async function identifyClothing(photo: Blob, s: Settings): Promise<AiGuess | null> {
   if (!s.doubaoApiKey) return null
-  const model = s.doubaoModel || 'doubao-vision-pro-32k-241028'
+  const model = s.doubaoModel || 'doubao-seed-2.1-turbo'
   const image = await blobToDataUrl(photo)
   try {
-    const resp = await fetch('https://ark.cn-beijing.volces.com/api/v3/chat/completions', {
+    const resp = await fetch('https://ark.cn-beijing.volces.com/api/plan/v3/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
