@@ -1,6 +1,13 @@
 import { useState } from 'react'
 import { useStore } from '../store'
 import { importDemoData } from '../demo'
+import { THEMES } from '../types'
+
+const SWATCHES: Record<string, string[]> = {
+  forest: ['#f4f6f0', '#7a9a7e', '#dfeadb', '#2f3a30'],
+  cream: ['#f7f4ee', '#9db89a', '#fbe9e3', '#4a4238'],
+  mint: ['#eef3f1', '#5f8f86', '#d6ebe3', '#2e3d3a'],
+}
 
 export default function SettingsPage() {
   const { settings, saveSettings, items, load } = useStore()
@@ -15,7 +22,6 @@ export default function SettingsPage() {
 
   const save = () =>
     saveSettings({
-      ...settings,
       doubaoApiKey: key || undefined,
       doubaoModel: model || undefined,
       aiProxyUrl: proxy.trim() || undefined,
@@ -32,6 +38,25 @@ export default function SettingsPage() {
       <h1>设置</h1>
       <p className="muted">衣柜共 {items.length} 件{total > 0 ? `，总价值 ¥${total}` : ''}</p>
 
+      <h2>外观风格</h2>
+      <div className="theme-row">
+        {THEMES.map((t) => (
+          <button
+            key={t.key}
+            className={`theme-opt ${(settings.theme ?? 'forest') === t.key ? 'on' : ''}`}
+            onClick={() => saveSettings({ theme: t.key })}
+          >
+            <span className="sw">
+              {SWATCHES[t.key].map((c) => (
+                <i key={c} style={{ background: c }} />
+              ))}
+            </span>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <p className="muted">点一下立即生效</p>
+
       <h2>AI 识别（豆包视觉）</h2>
       <label>API Key（火山引擎 Ark）</label>
       <input
@@ -44,7 +69,7 @@ export default function SettingsPage() {
       <input value={model} onChange={(e) => setModel(e.target.value)} />
       <label className="row">
         <input type="checkbox" checked={removeBg} onChange={(e) => setRemoveBg(e.target.checked)} />
-        录入时自动去背景（Seedream，每张约 1 分钟、消耗 token）
+        录入时自动去背景（默认本地快速，首次下载约 40MB 模型；可用 AI 精修）
       </label>
       <label>AI 中转地址（必填；手机无法直连豆包，需经中转，见 server/README.md）</label>
       <input value={proxy} onChange={(e) => setProxy(e.target.value)} placeholder="https://xxx.workers.dev" />

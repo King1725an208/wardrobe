@@ -49,7 +49,18 @@ function dateStr(daysAgo: number): string {
 /** 导入示例数据：5 件衣服 + 3 条历史穿搭记录。返回新增件数。 */
 export async function importDemoData(): Promise<number> {
   const existing = await db.listItems()
-  if (existing.some((i) => i.note === 'demo')) return 0
+  if (existing.some((i) => i.note === 'demo')) {
+    // 已导入过：给旧示例穿搭补齐 开衫+鞋，方便看拆解图
+    const idOf = (n: number) => existing.find((i) => i.note === 'demo' && i.brand === ['优衣库', 'UR', 'UR', 'UR', '优衣库'][n] && i.category === ['top', 'bottom', 'outerwear', 'dress', 'shoes'][n])?.id
+    const outfits = await db.listOutfits()
+    for (const o of outfits) {
+      const extra = [idOf(2), idOf(4)].filter((x): x is string => !!x && !o.itemIds.includes(x))
+      if (extra.length && o.itemIds.some((id) => existing.find((i) => i.id === id)?.note === 'demo')) {
+        await db.saveOutfit({ ...o, itemIds: [...o.itemIds, ...extra] })
+      }
+    }
+    return 0
+  }
 
   const created: { id: string; wearDaysAgo: number[] }[] = []
   for (const d of DEMO) {
@@ -61,11 +72,11 @@ export async function importDemoData(): Promise<number> {
     created.push({ id: item.id, wearDaysAgo: d.lastWornDaysAgo != null ? [d.lastWornDaysAgo] : [] })
   }
 
-  // 三天历史穿搭记录（白T+牛仔 / 开衫+牛仔 / 碎花裙）
+  // 三天历史穿搭记录（白T+牛仔 / 开衫+牛仔 / 白T+牛仔+鞋+开衫）
   const outfits: { daysAgo: number; idx: number[] }[] = [
-    { daysAgo: 8, idx: [0, 1] },
-    { daysAgo: 4, idx: [2, 1] },
-    { daysAgo: 1, idx: [0, 4] },
+    { daysAgo: 8, idx: [0, 1, 4] },
+    { daysAgo: 4, idx: [2, 1, 4] },
+    { daysAgo: 1, idx: [0, 4, 2, 1] },
   ]
   for (const o of outfits) {
     await db.saveOutfit({

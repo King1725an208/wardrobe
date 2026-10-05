@@ -3,29 +3,70 @@ import { useStore } from '../store'
 import { markWorn } from '../db'
 import { CATEGORIES } from '../types'
 import { useBlobUrl } from '../useBlobUrl'
-import type { OutfitRecord } from '../types'
+import type { Category, OutfitRecord, WardrobeItem } from '../types'
 
 function today() {
   return new Date().toISOString().slice(0, 10)
 }
 
+const BREAKDOWN_ORDER: Category[] = [
+  'outerwear',
+  'top',
+  'dress',
+  'bottom',
+  'shoes',
+  'bag',
+  'accessory',
+]
+
+function BreakdownItem({ item }: { item: WardrobeItem }) {
+  const url = useBlobUrl(item.photo)
+  return (
+    <div className="bd-item">
+      {url && <img src={url} alt="" />}
+      <span className="badge">
+        {CATEGORIES.find((c) => c.key === item.category)?.label}
+        {item.brand ? ` · ${item.brand}` : ''}
+      </span>
+    </div>
+  )
+}
+
 function OutfitCard({ rec }: { rec: OutfitRecord }) {
   const url = useBlobUrl(rec.photo)
   const { items } = useStore()
+  const [open, setOpen] = useState(false)
+  const worn = BREAKDOWN_ORDER.map((cat) => ({
+    cat,
+    list: rec.itemIds
+      .map((id) => items.find((i) => i.id === id))
+      .filter((i): i is WardrobeItem => !!i && i.category === cat),
+  })).filter((g) => g.list.length > 0)
   return (
-    <div className="outfit">
-      <div className="outfit-date">{rec.date}</div>
-      {url && <img src={url} alt="" />}
-      <div className="chips">
-        {rec.itemIds.map((id) => {
-          const it = items.find((i) => i.id === id)
-          return it ? (
-            <span key={id} className="badge">
-              {it.brand || CATEGORIES.find((c) => c.key === it.category)?.label}
-            </span>
-          ) : null
-        })}
+    <div className="outfit" onClick={() => setOpen(!open)}>
+      <div className="outfit-head">
+        <span className="outfit-date">{rec.date}</span>
+        <span className="muted">{open ? '收起' : '展开拆解'}</span>
       </div>
+      {open ? (
+        <div className="breakdown">
+          {worn.map((g) =>
+            g.list.map((it) => <BreakdownItem key={`${g.cat}-${it.id}`} item={it} />),
+          )}
+        </div>
+      ) : (
+        <div className="chips">
+          {rec.itemIds.map((id) => {
+            const it = items.find((i) => i.id === id)
+            return it ? (
+              <span key={id} className="badge">
+                {it.brand || CATEGORIES.find((c) => c.key === it.category)?.label}
+              </span>
+            ) : null
+          })}
+        </div>
+      )}
+      {url && <img src={url} alt="" />}
       {rec.note && <div className="muted">{rec.note}</div>}
     </div>
   )
