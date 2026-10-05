@@ -30,13 +30,19 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 }
 
 /** 浏览器直连方舟会被 CORS 拦截，所以经由我们自己的代理转发（代理不保存 key） */
-export const DEFAULT_AI_PROXY = '__AI_PROXY_URL__'
+export const DEFAULT_AI_PROXY = ''
+
+function proxyBase(s: Settings): string {
+  const base = (s.aiProxyUrl || DEFAULT_AI_PROXY).trim().replace(/\/$/, '')
+  if (!base) throw new Error('请先在「设置」页填写 AI 中转地址')
+  return base
+}
 
 /** 调豆包视觉模型识别衣服属性；无 key 返回 null，失败抛出带中文说明的 Error */
 export async function identifyClothing(photo: Blob, s: Settings): Promise<AiGuess | null> {
   if (!s.doubaoApiKey) return null
   const model = s.doubaoModel || 'doubao-seed-2.1-turbo'
-  const base = (s.aiProxyUrl || DEFAULT_AI_PROXY).replace(/\/$/, '')
+  const base = proxyBase(s)
   const image = await blobToDataUrl(photo)
   let resp: Response
   try {
@@ -101,7 +107,7 @@ export async function identifyClothing(photo: Blob, s: Settings): Promise<AiGues
 /** 用 Seedream 把衣服抠到纯白背景上；返回新的图片 Blob */
 export async function removeBackground(photo: Blob, s: Settings): Promise<Blob> {
   if (!s.doubaoApiKey) throw new Error('未填写 API Key')
-  const base = (s.aiProxyUrl || DEFAULT_AI_PROXY).replace(/\/$/, '')
+  const base = proxyBase(s)
   const image = await blobToDataUrl(photo)
   let resp: Response
   try {

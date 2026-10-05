@@ -6,12 +6,13 @@
 """
 
 import httpx
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI
+from fastapi import Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 ARK_BASE = "https://ark.cn-beijing.volces.com/api/plan/v3"
 
-app = FastAPI(title="wardrobe-proxy")
+app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
