@@ -9,13 +9,17 @@ import ItemDetail from './pages/ItemDetail'
 export type Page = 'wardrobe' | 'today' | 'add' | 'settings'
 
 export default function App() {
-  const { loaded, load } = useStore()
+  const { loaded, load, settings } = useStore()
   const [page, setPage] = useState<Page>('wardrobe')
   const [detailId, setDetailId] = useState<string | null>(null)
 
   useEffect(() => {
     load()
   }, [load])
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = settings.theme ?? 'forest'
+  }, [settings.theme])
 
   if (!loaded) return <div className="center">加载中…</div>
 

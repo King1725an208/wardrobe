@@ -1,6 +1,13 @@
 import { useState } from 'react'
 import { useStore } from '../store'
 import { importDemoData } from '../demo'
+import { THEMES } from '../types'
+
+const SWATCHES: Record<string, string[]> = {
+  forest: ['#f4f6f0', '#7a9a7e', '#dfeadb', '#2f3a30'],
+  cream: ['#f7f4ee', '#9db89a', '#fbe9e3', '#4a4238'],
+  mint: ['#eef3f1', '#5f8f86', '#d6ebe3', '#2e3d3a'],
+}
 
 export default function SettingsPage() {
   const { settings, saveSettings, items, load } = useStore()
@@ -31,6 +38,25 @@ export default function SettingsPage() {
     <div className="page">
       <h1>设置</h1>
       <p className="muted">衣柜共 {items.length} 件{total > 0 ? `，总价值 ¥${total}` : ''}</p>
+
+      <h2>外观风格</h2>
+      <div className="theme-row">
+        {THEMES.map((t) => (
+          <button
+            key={t.key}
+            className={`theme-opt ${(settings.theme ?? 'forest') === t.key ? 'on' : ''}`}
+            onClick={() => saveSettings({ ...settings, theme: t.key })}
+          >
+            <span className="sw">
+              {SWATCHES[t.key].map((c) => (
+                <i key={c} style={{ background: c }} />
+              ))}
+            </span>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <p className="muted">点一下立即生效</p>
 
       <h2>AI 识别（豆包视觉）</h2>
       <label>API Key（火山引擎 Ark）</label>
