@@ -41,13 +41,13 @@ export default function AddItem({ onDone }: { onDone: () => void }) {
       .catch((err) => patch(e.key, { ai: 'failed', aiError: err instanceof Error ? err.message : String(err) }))
   }
 
-  // 默认本地快速抠图；失败且有 key 时自动走 Seedream 兜底
+  // 默认 Seedream 去背景；未配 key/代理时用本地快速抠图兜底
   const runBg = (e: AddEntry) => {
     patch(e.key, { bg: 'loading', bgError: '' })
-    removeBackgroundFast(e.photo).catch(async () => {
-      if (!settings.doubaoApiKey || !settings.aiProxyUrl) throw new Error('本地抠图失败')
-      return removeBackground(e.photo, settings)
-    })
+    const primary = settings.doubaoApiKey && settings.aiProxyUrl
+      ? removeBackground(e.photo, settings)
+      : Promise.reject(new Error('no-key'))
+    primary.catch(() => removeBackgroundFast(e.photo))
       .then((b) => patch(e.key, { cutout: b, bg: 'done' }))
       .catch((err) => patch(e.key, { bg: 'failed', bgError: err instanceof Error ? err.message : String(err) }))
   }

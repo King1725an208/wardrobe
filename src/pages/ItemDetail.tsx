@@ -27,11 +27,11 @@ function EditItem({ item, onDone }: { item: WardrobeItem; onDone: () => void }) 
     setBg('idle')
     if (settings.removeBg === false) return
     setBg('loading')
-    // 默认本地快速抠图；失败且有 key 时自动走 Seedream 兜底
-    removeBackgroundFast(f).catch(async () => {
-      if (!settings.doubaoApiKey || !settings.aiProxyUrl) throw new Error('本地抠图失败')
-      return removeBackground(f, settings)
-    })
+    // 默认 Seedream 去背景；未配 key/代理时用本地快速抠图兜底
+    const primary = settings.doubaoApiKey && settings.aiProxyUrl
+      ? removeBackground(f, settings)
+      : Promise.reject(new Error('no-key'))
+    primary.catch(() => removeBackgroundFast(f))
       .then((b) => {
         setPhoto(b)
         setOriginal(f)

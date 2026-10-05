@@ -69,7 +69,7 @@ export default function SettingsPage() {
       <input value={model} onChange={(e) => setModel(e.target.value)} />
       <label className="row">
         <input type="checkbox" checked={removeBg} onChange={(e) => setRemoveBg(e.target.checked)} />
-        录入时自动去背景（默认本地快速，首次下载约 40MB 模型；可用 AI 精修）
+        录入时自动去背景（默认 Seedream 约 1 分钟；未配 key 时用本地快速模型）
       </label>
       <label>AI 中转地址（必填；手机无法直连豆包，需经中转，见 server/README.md）</label>
       <input value={proxy} onChange={(e) => setProxy(e.target.value)} placeholder="https://xxx.workers.dev" />
@@ -105,6 +105,7 @@ export default function SettingsPage() {
       {demoMsg && <p className="ok">{demoMsg}</p>}
 
       <p className="muted">数据只保存在本手机，不会上传。</p>
+      <p className="muted">版本 {__BUILD_TIME__}</p>
     </div>
   )
 }
