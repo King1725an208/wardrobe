@@ -33,7 +33,8 @@ function OutfitCard({ rec }: { rec: OutfitRecord }) {
 
 export default function Today() {
   const { outfits, items, saveOutfit, load } = useStore()
-  const fileRef = useRef<HTMLInputElement>(null)
+  const camRef = useRef<HTMLInputElement>(null)
+  const galRef = useRef<HTMLInputElement>(null)
   const existing = outfits.find((o) => o.date === today())
   const [photo, setPhoto] = useState<Blob | undefined>(existing?.photo)
   const [picked, setPicked] = useState<string[]>(existing?.itemIds ?? [])
@@ -61,21 +62,13 @@ export default function Today() {
   return (
     <div className="page">
       <h1>今日穿搭 <span className="muted">{today()}</span></h1>
-      <input
-        ref={fileRef}
-        type="file"
-        accept="image/*"
-        capture="user"
-        hidden
-        onChange={(e) => setPhoto(e.target.files?.[0])}
-      />
-      {url ? (
-        <img className="preview" src={url} alt="" onClick={() => fileRef.current?.click()} />
-      ) : (
-        <button className="photo-btn" onClick={() => fileRef.current?.click()}>
-          🤳 拍一张今天的穿搭
-        </button>
-      )}
+      <input ref={camRef} type="file" accept="image/*" capture="user" hidden onChange={(e) => setPhoto(e.target.files?.[0])} />
+      <input ref={galRef} type="file" accept="image/*" hidden onChange={(e) => setPhoto(e.target.files?.[0])} />
+      {url && <img className="preview" src={url} alt="" />}
+      <div className="photo-row">
+        <button className="photo-btn" onClick={() => camRef.current?.click()}>🤳 拍今日穿搭</button>
+        <button className="photo-btn" onClick={() => galRef.current?.click()}>🖼️ 从相册选</button>
+      </div>
 
       <label>今天穿了衣柜里的哪几件？</label>
       <div className="pick-grid">

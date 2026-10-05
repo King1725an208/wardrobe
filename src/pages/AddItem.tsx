@@ -6,7 +6,8 @@ import { useBlobUrl } from '../useBlobUrl'
 
 export default function AddItem({ onDone }: { onDone: () => void }) {
   const { add, settings } = useStore()
-  const fileRef = useRef<HTMLInputElement>(null)
+  const camRef = useRef<HTMLInputElement>(null)
+  const galRef = useRef<HTMLInputElement>(null)
   const [photo, setPhoto] = useState<Blob>()
   const [aiState, setAiState] = useState<'idle' | 'loading' | 'done' | 'failed'>('idle')
   const [category, setCategory] = useState<Category>('top')
@@ -60,21 +61,13 @@ export default function AddItem({ onDone }: { onDone: () => void }) {
   return (
     <div className="page">
       <h1>录入衣服</h1>
-      <input
-        ref={fileRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        hidden
-        onChange={(e) => onPhoto(e.target.files?.[0])}
-      />
-      {url ? (
-        <img className="preview" src={url} alt="" onClick={() => fileRef.current?.click()} />
-      ) : (
-        <button className="photo-btn" onClick={() => fileRef.current?.click()}>
-          📷 拍照 / 选照片
-        </button>
-      )}
+      <input ref={camRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => onPhoto(e.target.files?.[0])} />
+      <input ref={galRef} type="file" accept="image/*" hidden onChange={(e) => onPhoto(e.target.files?.[0])} />
+      {url && <img className="preview" src={url} alt="" />}
+      <div className="photo-row">
+        <button className="photo-btn" onClick={() => camRef.current?.click()}>📷 拍照</button>
+        <button className="photo-btn" onClick={() => galRef.current?.click()}>🖼️ 从相册选</button>
+      </div>
       {aiState === 'loading' && <p className="muted">AI 识别中…</p>}
       {aiState === 'done' && <p className="ok">AI 已预填，请确认或修改</p>}
       {aiState === 'failed' && <p className="muted">AI 识别失败，请手动填写</p>}
