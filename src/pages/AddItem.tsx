@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import type { AddEntry } from '../types'
-import { identifyClothing, removeBackground, removeBackgroundFast } from '../ai'
+import { identifyClothing, removeBackground } from '../ai'
 import { useStore } from '../store'
 import { useBlobUrl } from '../useBlobUrl'
 import ItemForm from '../components/ItemForm'
@@ -41,13 +41,11 @@ export default function AddItem({ onDone }: { onDone: () => void }) {
       .catch((err) => patch(e.key, { ai: 'failed', aiError: err instanceof Error ? err.message : String(err) }))
   }
 
-  // 默认 Seedream 去背景；未配 key/代理时用本地快速抠图兜底
+  // 只走 Seedream；失败就用原图
   const runBg = (e: AddEntry) => {
+    if (!settings.doubaoApiKey || !settings.aiProxyUrl) return
     patch(e.key, { bg: 'loading', bgError: '' })
-    const primary = settings.doubaoApiKey && settings.aiProxyUrl
-      ? removeBackground(e.photo, settings)
-      : Promise.reject(new Error('no-key'))
-    primary.catch(() => removeBackgroundFast(e.photo))
+    removeBackground(e.photo, settings)
       .then((b) => patch(e.key, { cutout: b, bg: 'done' }))
       .catch((err) => patch(e.key, { bg: 'failed', bgError: err instanceof Error ? err.message : String(err) }))
   }

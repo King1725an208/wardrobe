@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { removeBackground, removeBackgroundFast } from '../ai'
+import { removeBackground } from '../ai'
 import { useStore } from '../store'
 import { autoWearLevel, wearLevel } from '../frequency'
 import { CATEGORIES, WEAR_LEVELS, type WardrobeItem, type WearLevel } from '../types'
@@ -27,11 +27,11 @@ function EditItem({ item, onDone }: { item: WardrobeItem; onDone: () => void }) 
     setBg('idle')
     if (settings.removeBg === false) return
     setBg('loading')
-    // 默认 Seedream 去背景；未配 key/代理时用本地快速抠图兜底
-    const primary = settings.doubaoApiKey && settings.aiProxyUrl
+    // 只走 Seedream；失败就用原图
+    const p = settings.doubaoApiKey && settings.aiProxyUrl
       ? removeBackground(f, settings)
-      : Promise.reject(new Error('no-key'))
-    primary.catch(() => removeBackgroundFast(f))
+      : Promise.reject(new Error('未配置 API Key 或中转地址'))
+    p
       .then((b) => {
         setPhoto(b)
         setOriginal(f)

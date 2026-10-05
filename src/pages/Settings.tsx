@@ -69,7 +69,7 @@ export default function SettingsPage() {
       <input value={model} onChange={(e) => setModel(e.target.value)} />
       <label className="row">
         <input type="checkbox" checked={removeBg} onChange={(e) => setRemoveBg(e.target.checked)} />
-        录入时自动去背景（默认 Seedream 约 1 分钟；未配 key 时用本地快速模型）
+        录入时自动去背景（Seedream，每张约 1 分钟；失败用原图）
       </label>
       <label>AI 中转地址（必填；手机无法直连豆包，需经中转，见 server/README.md）</label>
       <input value={proxy} onChange={(e) => setProxy(e.target.value)} placeholder="https://xxx.workers.dev" />
