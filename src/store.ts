@@ -1,12 +1,16 @@
 import { create } from 'zustand'
 import * as db from './db'
-import type { NewItem, OutfitRecord, Settings, WardrobeItem } from './types'
+import type { AddEntry, NewItem, OutfitRecord, Settings, WardrobeItem } from './types'
 
 interface State {
   items: WardrobeItem[]
   outfits: OutfitRecord[]
   settings: Settings
   loaded: boolean
+  addEntries: AddEntry[]
+  addCur: number
+  setAddCur: (i: number) => void
+  setAddEntries: (u: AddEntry[] | ((l: AddEntry[]) => AddEntry[])) => void
   load: () => Promise<void>
   add: (item: NewItem) => Promise<WardrobeItem>
   update: (item: WardrobeItem) => Promise<void>
@@ -20,6 +24,10 @@ export const useStore = create<State>((set, get) => ({
   outfits: [],
   settings: {},
   loaded: false,
+  addEntries: [],
+  addCur: 0,
+  setAddCur: (i) => set({ addCur: i }),
+  setAddEntries: (u) => set({ addEntries: typeof u === 'function' ? u(get().addEntries) : u }),
   load: async () => {
     const [items, outfits, settings] = await Promise.all([
       db.listItems(),

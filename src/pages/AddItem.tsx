@@ -1,25 +1,12 @@
 import { useRef, useState } from 'react'
-import { identifyClothing, removeBackground } from '../ai'
+import type { AddEntry } from '../types'
+import { identifyClothing, removeBackground, removeBackgroundFast } from '../ai'
 import { useStore } from '../store'
 import { useBlobUrl } from '../useBlobUrl'
 import ItemForm from '../components/ItemForm'
-import { applyGuess, draftToFields, emptyDraft, type Draft } from '../draft'
+import { applyGuess, draftToFields, emptyDraft } from '../draft'
 
-type Stage = 'idle' | 'loading' | 'done' | 'failed'
-
-interface Entry {
-  key: string
-  photo: Blob
-  cutout?: Blob
-  useCutout: boolean
-  bg: Stage
-  bgError: string
-  ai: Stage
-  aiError: string
-  draft: Draft
-}
-
-function Thumb({ e, on, onClick }: { e: Entry; on: boolean; onClick: () => void }) {
+function Thumb({ e, on, onClick }: { e: AddEntry; on: boolean; onClick: () => void }) {
   const url = useBlobUrl(e.useCutout && e.cutout ? e.cutout : e.photo)
   const busy = e.bg === 'loading' || e.ai === 'loading'
   return (
@@ -32,38 +19,51 @@ function Thumb({ e, on, onClick }: { e: Entry; on: boolean; onClick: () => void 
 }
 
 export default function AddItem({ onDone }: { onDone: () => void }) {
-  const { add, settings } = useStore()
+  const { add, settings, addEntries: entries, addCur: cur, setAddCur: setCur, setAddEntries: setEntries } = useStore()
   const camRef = useRef<HTMLInputElement>(null)
   const galRef = useRef<HTMLInputElement>(null)
-  const [entries, setEntries] = useState<Entry[]>([])
-  const [cur, setCur] = useState(0)
   const [saving, setSaving] = useState(false)
-  const entry = entries[Math.min(cur, entries.length - 1)] as Entry | undefined
+  const entry = entries[Math.min(cur, entries.length - 1)] as AddEntry | undefined
   const url = useBlobUrl(entry ? (entry.useCutout && entry.cutout ? entry.cutout : entry.photo) : undefined)
 
-  const patch = (key: string, p: Partial<Entry> | ((e: Entry) => Partial<Entry>)) =>
-    setEntries((list) => list.map((e) => (e.key === key ? { ...e, ...(typeof p === 'function' ? p(e) : p) } : e)))
+  const patch = (key: string, p: Partial<AddEntry> | ((e: AddEntry) => Partial<AddEntry>)) =>
+    setEntries((list: AddEntry[]) => list.map((e) => (e.key === key ? { ...e, ...(typeof p === 'function' ? p(e) : p) } : e)))
 
-  const process = (e: Entry) => {
+  const process = (e: AddEntry) => {
     if (!settings.doubaoApiKey) return
-    if (settings.removeBg !== false) {
-      patch(e.key, { bg: 'loading' })
-      removeBackground(e.photo, settings)
-        .then((b) => patch(e.key, { cutout: b, bg: 'done' }))
-        .catch((err) => patch(e.key, { bg: 'failed', bgError: err instanceof Error ? err.message : String(err) }))
-    }
+    if (settings.removeBg !== false) runBg(e)
     patch(e.key, { ai: 'loading' })
     identifyClothing(e.photo, settings)
       .then((g) => {
         if (!g) return patch(e.key, { ai: 'failed' })
-        patch(e.key, (old) => ({ ai: 'done', draft: applyGuess(old.draft, g) }))
+        patch(e.key, (old: AddEntry) => ({ ai: 'done', draft: applyGuess(old.draft, g) }))
       })
       .catch((err) => patch(e.key, { ai: 'failed', aiError: err instanceof Error ? err.message : String(err) }))
   }
 
+  // 默认本地快速抠图；失败且有 key 时自动走 Seedream 兜底
+  const runBg = (e: AddEntry) => {
+    patch(e.key, { bg: 'loading', bgError: '' })
+    removeBackgroundFast(e.photo).catch(async () => {
+      if (!settings.doubaoApiKey || !settings.aiProxyUrl) throw new Error('本地抠图失败')
+      return removeBackground(e.photo, settings)
+    })
+      .then((b) => patch(e.key, { cutout: b, bg: 'done' }))
+      .catch((err) => patch(e.key, { bg: 'failed', bgError: err instanceof Error ? err.message : String(err) }))
+  }
+
+  // Seedream 精修（约 1 分钟）
+  const refine = (e: AddEntry) => {
+    if (!settings.doubaoApiKey) return
+    patch(e.key, { bg: 'loading', bgError: '' })
+    removeBackground(e.photo, settings)
+      .then((b) => patch(e.key, { cutout: b, useCutout: true, bg: 'done' }))
+      .catch((err) => patch(e.key, { bg: 'failed', bgError: err instanceof Error ? err.message : String(err) }))
+  }
+
   const onFiles = (files: FileList | null) => {
     if (!files?.length) return
-    const added: Entry[] = Array.from(files).map((f) => ({
+    const added: AddEntry[] = Array.from(files).map((f) => ({
       key: crypto.randomUUID(),
       photo: f,
       useCutout: true,
@@ -81,7 +81,7 @@ export default function AddItem({ onDone }: { onDone: () => void }) {
   const removeCur = () => {
     if (!entry) return
     setEntries((list) => list.filter((e) => e.key !== entry.key))
-    setCur((i) => Math.max(0, i - 1))
+    setCur(Math.max(0, cur - 1))
   }
 
   const busyCount = entries.filter((e) => e.bg === 'loading' || e.ai === 'loading').length
@@ -98,6 +98,8 @@ export default function AddItem({ onDone }: { onDone: () => void }) {
           ...draftToFields(e.draft),
         })
       }
+      setEntries([])
+      setCur(0)
       onDone()
     } finally {
       setSaving(false)
@@ -119,13 +121,16 @@ export default function AddItem({ onDone }: { onDone: () => void }) {
       )}
 
       {url && <img className="preview" src={url} alt="" />}
-      {entry?.bg === 'loading' && <p className="muted">去背景中（约 1 分钟）…</p>}
+      {entry?.bg === 'loading' && <p className="muted">去背景中…</p>}
       {entry?.bg === 'failed' && <p className="muted">去背景失败，使用原图{entry.bgError ? `（${entry.bgError}）` : ''}</p>}
       {entry?.cutout && (
         <div className="chips">
           <button className={entry.useCutout ? 'on' : ''} onClick={() => patch(entry.key, { useCutout: true })}>白底图</button>
           <button className={!entry.useCutout ? 'on' : ''} onClick={() => patch(entry.key, { useCutout: false })}>原图</button>
         </div>
+      )}
+      {entry && entry.bg !== 'loading' && settings.doubaoApiKey && settings.aiProxyUrl && (
+        <button className="link" onClick={() => refine(entry)}>效果不好？AI 精修（约 1 分钟）</button>
       )}
 
       <div className="photo-row">
@@ -147,6 +152,7 @@ export default function AddItem({ onDone }: { onDone: () => void }) {
 
       {entry && <ItemForm value={entry.draft} onChange={(d) => patch(entry.key, { draft: d })} />}
 
+      {busyCount > 0 && <p className="muted">可以切去别的页面，回来进度还在</p>}
       <button className="primary" disabled={!entries.length || saving} onClick={save}>
         {saving ? '保存中…' : entries.length > 1 ? `保存 ${entries.length} 件到衣柜` : '保存到衣柜'}
         {busyCount > 0 && entries.length > 1 ? `（${busyCount} 张还在处理）` : ''}

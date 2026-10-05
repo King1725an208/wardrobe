@@ -104,6 +104,16 @@ export async function identifyClothing(photo: Blob, s: Settings): Promise<AiGues
   }
 }
 
+/** 本地快速抠图（模型在浏览器里跑，首次需下载约 40MB，之后秒级） */
+export async function removeBackgroundFast(photo: Blob): Promise<Blob> {
+  try {
+    const { removeBackground } = await import('@imgly/background-removal')
+    return await removeBackground(photo)
+  } catch (e) {
+    throw new Error('本地抠图失败' + (e instanceof Error ? `：${e.message}` : ''))
+  }
+}
+
 /** 用 Seedream 把衣服抠到纯白背景上；返回新的图片 Blob */
 export async function removeBackground(photo: Blob, s: Settings): Promise<Blob> {
   if (!s.doubaoApiKey) throw new Error('未填写 API Key')

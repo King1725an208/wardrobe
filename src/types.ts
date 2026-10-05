@@ -67,6 +67,21 @@ export const THEMES = [
 ] as const
 export type Theme = (typeof THEMES)[number]['key']
 
+export type Stage = 'idle' | 'loading' | 'done' | 'failed'
+
+/** 录入页的每张待保存照片（全局暂存，切页面不丢） */
+export interface AddEntry {
+  key: string
+  photo: Blob
+  cutout?: Blob
+  useCutout: boolean
+  bg: Stage
+  bgError: string
+  ai: Stage
+  aiError: string
+  draft: import('./draft').Draft
+}
+
 export interface Settings {
   theme?: Theme // 默认 forest
   doubaoApiKey?: string

@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { removeBackground } from '../ai'
+import { removeBackground, removeBackgroundFast } from '../ai'
 import { useStore } from '../store'
 import { autoWearLevel, wearLevel } from '../frequency'
 import { CATEGORIES, WEAR_LEVELS, type WardrobeItem, type WearLevel } from '../types'
@@ -25,19 +25,39 @@ function EditItem({ item, onDone }: { item: WardrobeItem; onDone: () => void }) 
     setPhoto(f)
     setOriginal(undefined)
     setBg('idle')
-    if (settings.doubaoApiKey && settings.removeBg !== false) {
-      setBg('loading')
-      removeBackground(f, settings)
-        .then((b) => {
-          setPhoto(b)
-          setOriginal(f)
-          setBg('idle')
-        })
-        .catch((e) => {
-          setBgError(e instanceof Error ? e.message : String(e))
-          setBg('failed')
-        })
-    }
+    if (settings.removeBg === false) return
+    setBg('loading')
+    // 默认本地快速抠图；失败且有 key 时自动走 Seedream 兜底
+    removeBackgroundFast(f).catch(async () => {
+      if (!settings.doubaoApiKey || !settings.aiProxyUrl) throw new Error('本地抠图失败')
+      return removeBackground(f, settings)
+    })
+      .then((b) => {
+        setPhoto(b)
+        setOriginal(f)
+        setBg('idle')
+      })
+      .catch((e) => {
+        setBgError(e instanceof Error ? e.message : String(e))
+        setBg('failed')
+      })
+  }
+
+  // Seedream 精修（约 1 分钟）
+  const refine = () => {
+    const src = original ?? photo
+    if (!src || !settings.doubaoApiKey) return
+    setBg('loading')
+    removeBackground(src, settings)
+      .then((b) => {
+        setPhoto(b)
+        setOriginal(src)
+        setBg('idle')
+      })
+      .catch((e) => {
+        setBgError(e instanceof Error ? e.message : String(e))
+        setBg('failed')
+      })
   }
 
   const swap = () => {
@@ -63,10 +83,13 @@ function EditItem({ item, onDone }: { item: WardrobeItem; onDone: () => void }) 
       <input ref={camRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => onNewPhoto(e.target.files?.[0])} />
       <input ref={galRef} type="file" accept="image/*" hidden onChange={(e) => onNewPhoto(e.target.files?.[0])} />
       {url && <img className="preview" src={url} alt="" />}
-      {bg === 'loading' && <p className="muted">去背景中（约 1 分钟）…</p>}
+      {bg === 'loading' && <p className="muted">去背景中…</p>}
       {bg === 'failed' && <p className="muted">去背景失败，使用原图{bgError ? `（${bgError}）` : ''}</p>}
       {original && (
         <button className="link" onClick={swap}>⇄ 切换到另一张（白底图 / 原图）</button>
+      )}
+      {bg !== 'loading' && settings.doubaoApiKey && settings.aiProxyUrl && (
+        <button className="link" onClick={refine}>效果不好？AI 精修（约 1 分钟）</button>
       )}
       <div className="photo-row">
         <button className="photo-btn" onClick={() => camRef.current?.click()}>📷 重拍</button>

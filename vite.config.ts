@@ -20,6 +20,10 @@ export default defineConfig({
           { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
         ],
       },
+      workbox: {
+        // 本地抠图模型的 wasm 较大，放宽预缓存上限
+        maximumFileSizeToCacheInBytes: 32 * 1024 * 1024,
+      },
     }),
   ],
 })
