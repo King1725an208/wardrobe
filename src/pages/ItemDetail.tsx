@@ -1,13 +1,92 @@
+import { useRef, useState } from 'react'
+import { removeBackground } from '../ai'
 import { useStore } from '../store'
 import { autoWearLevel, wearLevel } from '../frequency'
-import { CATEGORIES, WEAR_LEVELS, type WearLevel } from '../types'
+import { CATEGORIES, WEAR_LEVELS, type WardrobeItem, type WearLevel } from '../types'
 import { useBlobUrl } from '../useBlobUrl'
+import ItemForm from '../components/ItemForm'
+import { draftFromItem, draftToFields, type Draft } from '../draft'
+
+function EditItem({ item, onDone }: { item: WardrobeItem; onDone: () => void }) {
+  const { settings, update } = useStore()
+  const camRef = useRef<HTMLInputElement>(null)
+  const galRef = useRef<HTMLInputElement>(null)
+  const [draft, setDraft] = useState<Draft>(() => draftFromItem(item))
+  // 当前主图 / 原图（换照片后两者都会被替换）
+  const [photo, setPhoto] = useState<Blob>(item.photo)
+  const [original, setOriginal] = useState<Blob | undefined>(item.originalPhoto)
+  const [bg, setBg] = useState<'idle' | 'loading' | 'failed'>('idle')
+  const [bgError, setBgError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const url = useBlobUrl(photo)
+
+  const onNewPhoto = (f: File | undefined) => {
+    if (!f) return
+    setPhoto(f)
+    setOriginal(undefined)
+    setBg('idle')
+    if (settings.doubaoApiKey && settings.removeBg !== false) {
+      setBg('loading')
+      removeBackground(f, settings)
+        .then((b) => {
+          setPhoto(b)
+          setOriginal(f)
+          setBg('idle')
+        })
+        .catch((e) => {
+          setBgError(e instanceof Error ? e.message : String(e))
+          setBg('failed')
+        })
+    }
+  }
+
+  const swap = () => {
+    if (!original) return
+    setPhoto(original)
+    setOriginal(photo)
+  }
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      await update({ ...item, ...draftToFields(draft), photo, originalPhoto: original })
+      onDone()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="page">
+      <button className="back" onClick={onDone}>← 取消</button>
+      <h1>编辑衣服</h1>
+      <input ref={camRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => onNewPhoto(e.target.files?.[0])} />
+      <input ref={galRef} type="file" accept="image/*" hidden onChange={(e) => onNewPhoto(e.target.files?.[0])} />
+      {url && <img className="preview" src={url} alt="" />}
+      {bg === 'loading' && <p className="muted">去背景中（约 1 分钟）…</p>}
+      {bg === 'failed' && <p className="muted">去背景失败，使用原图{bgError ? `（${bgError}）` : ''}</p>}
+      {original && (
+        <button className="link" onClick={swap}>⇄ 切换到另一张（白底图 / 原图）</button>
+      )}
+      <div className="photo-row">
+        <button className="photo-btn" onClick={() => camRef.current?.click()}>📷 重拍</button>
+        <button className="photo-btn" onClick={() => galRef.current?.click()}>🖼️ 换一张</button>
+      </div>
+      <ItemForm value={draft} onChange={setDraft} />
+      <button className="primary" disabled={saving || bg === 'loading'} onClick={save}>
+        {saving ? '保存中…' : '保存修改'}
+      </button>
+    </div>
+  )
+}
 
 export default function ItemDetail({ id, onBack }: { id: string; onBack: () => void }) {
   const { items, outfits, settings, update, remove } = useStore()
   const item = items.find((i) => i.id === id)
+  const [editing, setEditing] = useState(false)
   const url = useBlobUrl(item?.photo)
   if (!item) return null
+  if (editing) return <EditItem item={item} onDone={() => setEditing(false)} />
 
   const auto = autoWearLevel(item, settings)
   const effective = wearLevel(item, settings)
@@ -17,7 +96,10 @@ export default function ItemDetail({ id, onBack }: { id: string; onBack: () => v
 
   return (
     <div className="page">
-      <button className="back" onClick={onBack}>← 返回</button>
+      <div className="bar">
+        <button className="back" onClick={onBack}>← 返回</button>
+        <button className="link" onClick={() => setEditing(true)}>✎ 编辑</button>
+      </div>
       {url && <img className="preview" src={url} alt="" />}
       <h2>
         {item.brand || CATEGORIES.find((c) => c.key === item.category)?.label}
