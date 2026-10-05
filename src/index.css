@@ -1,0 +1,98 @@
+:root {
+  --bg: #faf7f4;
+  --card: #fff;
+  --ink: #2d2a26;
+  --muted: #9a938b;
+  --accent: #c98a6b;
+  --accent-ink: #fff;
+  font-family: -apple-system, "PingFang SC", "Noto Sans SC", sans-serif;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); }
+.app { max-width: 640px; margin: 0 auto; min-height: 100dvh; display: flex; flex-direction: column; }
+main { flex: 1; padding-bottom: 72px; }
+.page { padding: 16px; }
+.center { display: grid; place-items: center; height: 100dvh; }
+.center-pad { padding: 48px 0; text-align: center; }
+.muted { color: var(--muted); font-weight: 400; font-size: 0.85em; }
+.ok { color: #4a9b6e; font-size: 0.9em; }
+
+h1 { font-size: 1.4rem; }
+h2 { font-size: 1.05rem; margin-top: 1.4em; }
+label { display: block; margin: 14px 0 6px; font-size: 0.9rem; color: var(--muted); }
+
+input, select {
+  width: 100%; padding: 10px 12px; border: 1px solid #e5ded6; border-radius: 10px;
+  background: var(--card); font-size: 1rem; color: var(--ink);
+}
+.row { display: flex; align-items: center; gap: 8px; }
+.row input { width: 80px; }
+
+button { font: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+
+.search { margin-bottom: 10px; }
+
+.cats, .chips, .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.cats { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
+.cats button, .chips button, .filters select {
+  padding: 7px 14px; border-radius: 999px; border: 1px solid #e5ded6;
+  background: var(--card); white-space: nowrap; font-size: 0.88rem;
+}
+.filters select { width: auto; flex: 1; }
+.cats button.on, .chips button.on {
+  background: var(--accent); color: var(--accent-ink); border-color: var(--accent);
+}
+
+.grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.card {
+  background: var(--card); border-radius: 14px; overflow: hidden; text-align: left;
+  padding: 0; box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+}
+.card img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
+.card .ph { width: 100%; aspect-ratio: 1; background: #eee; }
+.card-info { padding: 8px 10px 10px; }
+.card-title { font-size: 0.92rem; font-weight: 600; }
+.card-sub { font-size: 0.78rem; color: var(--muted); margin: 2px 0 6px; }
+
+.badge {
+  display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.72rem;
+  background: #f0ebe4; color: var(--muted);
+}
+.badge.lv-often { background: #dcefe2; color: #3d7a56; }
+.badge.lv-rarely { background: #fbf0dc; color: #a0713a; }
+.badge.lv-never { background: #f3e2e0; color: #a05050; }
+
+.tabbar {
+  position: fixed; bottom: 0; left: 0; right: 0; max-width: 640px; margin: 0 auto;
+  display: flex; background: var(--card); border-top: 1px solid #eee7df;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.tabbar button { flex: 1; padding: 14px 0; font-size: 0.9rem; color: var(--muted); }
+.tabbar button.on { color: var(--accent); font-weight: 600; }
+
+.photo-btn {
+  width: 100%; aspect-ratio: 4/3; border: 2px dashed #ddd2c6; border-radius: 14px;
+  font-size: 1.1rem; color: var(--muted); background: var(--card);
+}
+.preview { width: 100%; max-height: 45vh; object-fit: contain; border-radius: 14px; background: var(--card); display: block; }
+
+.primary {
+  width: 100%; margin-top: 20px; padding: 14px; border-radius: 12px;
+  background: var(--accent); color: var(--accent-ink); font-size: 1rem; font-weight: 600;
+}
+.primary:disabled { opacity: 0.4; }
+.danger { width: 100%; margin-top: 24px; padding: 12px; color: #b05050; }
+.back { margin-bottom: 12px; color: var(--muted); }
+
+.attrs { background: var(--card); border-radius: 12px; padding: 12px 14px; line-height: 1.9; font-size: 0.92rem; }
+.history { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.pick-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.thumb { padding: 0; border-radius: 10px; overflow: hidden; border: 3px solid transparent; aspect-ratio: 1; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb.on { border-color: var(--accent); }
+
+.outfit { background: var(--card); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+.outfit-date { font-weight: 600; margin-bottom: 8px; }
+.outfit img { width: 100%; max-height: 300px; object-fit: cover; border-radius: 8px; margin-bottom: 8px; }
