@@ -22,7 +22,6 @@ export default function SettingsPage() {
 
   const save = () =>
     saveSettings({
-      ...settings,
       doubaoApiKey: key || undefined,
       doubaoModel: model || undefined,
       aiProxyUrl: proxy.trim() || undefined,
@@ -45,7 +44,7 @@ export default function SettingsPage() {
           <button
             key={t.key}
             className={`theme-opt ${(settings.theme ?? 'forest') === t.key ? 'on' : ''}`}
-            onClick={() => saveSettings({ ...settings, theme: t.key })}
+            onClick={() => saveSettings({ theme: t.key })}
           >
             <span className="sw">
               {SWATCHES[t.key].map((c) => (

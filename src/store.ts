@@ -12,7 +12,7 @@ interface State {
   update: (item: WardrobeItem) => Promise<void>
   remove: (id: string) => Promise<void>
   saveOutfit: (rec: OutfitRecord) => Promise<void>
-  saveSettings: (s: Settings) => Promise<void>
+  saveSettings: (patch: Partial<Settings>) => Promise<void>
 }
 
 export const useStore = create<State>((set, get) => ({
@@ -46,8 +46,10 @@ export const useStore = create<State>((set, get) => ({
     const outfits = get().outfits.filter((o) => o.id !== rec.id)
     set({ outfits: [rec, ...outfits].sort((a, b) => b.date.localeCompare(a.date)) })
   },
-  saveSettings: async (s) => {
-    await db.saveSettings(s)
+  saveSettings: async (patch) => {
+    const s = { ...get().settings, ...patch }
+    if (s.theme) localStorage.setItem('theme', s.theme)
     set({ settings: s })
+    await db.saveSettings(s)
   },
 }))
