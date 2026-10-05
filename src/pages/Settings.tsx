@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { useStore } from '../store'
+import { importDemoData } from '../demo'
 
 export default function SettingsPage() {
-  const { settings, saveSettings, items } = useStore()
+  const { settings, saveSettings, items, load } = useStore()
+  const [demoMsg, setDemoMsg] = useState('')
   const [key, setKey] = useState(settings.doubaoApiKey ?? '')
   const [model, setModel] = useState(settings.doubaoModel ?? 'doubao-seed-2.1-turbo')
   const [oftenDays, setOftenDays] = useState(settings.oftenDays ?? 90)
@@ -52,6 +54,21 @@ export default function SettingsPage() {
       </div>
 
       <button className="primary" onClick={save}>保存设置</button>
+
+      <h2>调试</h2>
+      <button
+        className="photo-btn"
+        style={{ aspectRatio: 'auto', padding: 12 }}
+        onClick={async () => {
+          const n = await importDemoData()
+          await load()
+          setDemoMsg(n ? `已导入 ${n} 件示例衣服和 3 条穿搭记录` : '示例数据已导入过了')
+        }}
+      >
+        导入示例数据（5 件测试衣服）
+      </button>
+      {demoMsg && <p className="ok">{demoMsg}</p>}
+
       <p className="muted">数据只保存在本手机，不会上传。</p>
     </div>
   )
