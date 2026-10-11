@@ -41,6 +41,14 @@ export async function deleteItem(id: string): Promise<void> {
   await (await db()).delete('items', id)
 }
 
+/** 批量写入（导入备份用）：同 id 覆盖、不同 id 新增 */
+export async function bulkPutItems(items: WardrobeItem[]): Promise<void> {
+  const d = await db()
+  const tx = d.transaction('items', 'readwrite')
+  for (const it of items) await tx.store.put(it)
+  await tx.done
+}
+
 export async function listOutfits(): Promise<OutfitRecord[]> {
   const all = await (await db()).getAll('outfits')
   return all.sort((a, b) => b.date.localeCompare(a.date))

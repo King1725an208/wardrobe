@@ -1,8 +1,10 @@
-import { useState } from 'react'
+import { useRef, useState, type ChangeEvent } from 'react'
 import { useStore } from '../store'
 import { importDemoData } from '../demo'
 import { THEMES } from '../types'
 import { DEFAULT_AI_PROXY } from '../ai'
+import { exportItemsJson, parseItemsJson } from '../backup'
+import { bulkPutItems } from '../db'
 
 /** 已保存的 API Key 在输入框里以此占位显示（脱敏）；保存时若未被改动则保留原值 */
 const KEY_MASK = 'XXXXXXXXXXXXX'
@@ -24,6 +26,46 @@ export default function SettingsPage() {
   const [oftenDays, setOftenDays] = useState(settings.oftenDays ?? 90)
   const [oftenCount, setOftenCount] = useState(settings.oftenCount ?? 3)
   const [neverDays, setNeverDays] = useState(settings.neverDays ?? 365)
+  const [backupBusy, setBackupBusy] = useState(false)
+  const [backupMsg, setBackupMsg] = useState('')
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const doExport = async () => {
+    setBackupBusy(true)
+    try {
+      const json = await exportItemsJson(items)
+      const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `电子衣柜备份-${new Date().toISOString().slice(0, 10)}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      setBackupMsg(`✅ 已导出 ${items.length} 件衣服`)
+    } catch {
+      setBackupMsg('⚠️ 导出失败，请重试')
+    } finally {
+      setBackupBusy(false)
+    }
+  }
+
+  const doImport = async (e: ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    e.target.value = '' // 允许重复选择同一文件
+    if (!f) return
+    setBackupBusy(true)
+    try {
+      const list = await parseItemsJson(await f.text())
+      const existing = new Set(items.map((i) => i.id))
+      const added = list.filter((i) => !existing.has(i.id)).length
+      await bulkPutItems(list)
+      await load()
+      setBackupMsg(`✅ 导入完成：共 ${list.length} 件（新增 ${added} · 覆盖更新 ${list.length - added}）`)
+    } catch (err) {
+      setBackupMsg(`⚠️ ${err instanceof Error ? err.message : '导入失败'}`)
+    } finally {
+      setBackupBusy(false)
+    }
+  }
 
   const save = () => {
     saveSettings({
@@ -104,6 +146,20 @@ export default function SettingsPage() {
 
       <button className="primary" onClick={save}>保存设置</button>
 
+      <h2>数据备份</h2>
+      <div className="row">
+        <button className="photo-btn" style={{ aspectRatio: 'auto', padding: 12, flex: 1 }} onClick={doExport} disabled={backupBusy}>
+          导出 JSON
+        </button>
+        <button className="photo-btn" style={{ aspectRatio: 'auto', padding: 12, flex: 1 }} onClick={() => fileRef.current?.click()} disabled={backupBusy}>
+          导入 JSON
+        </button>
+      </div>
+      <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={doImport} />
+      <p className="muted">
+        JSON 包含每件衣服的全部信息和照片（base64，文件较大），可用于换机迁移；导入时同 id 覆盖、不同 id 新增，不会重复。不含穿搭记录和设置（API Key 不会导出）。
+      </p>
+
       <h2>调试</h2>
       <button
         className="photo-btn"
@@ -126,6 +182,14 @@ export default function SettingsPage() {
           <div className="modal-box" onClick={(e) => e.stopPropagation()}>
             <p className="modal-title">✅ 设置已保存</p>
             <button className="primary" onClick={() => setSavedOpen(false)}>知道了</button>
+          </div>
+        </div>
+      )}
+      {backupMsg && (
+        <div className="modal-mask" onClick={() => setBackupMsg('')}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <p className="modal-title">{backupMsg}</p>
+            <button className="primary" onClick={() => setBackupMsg('')}>知道了</button>
           </div>
         </div>
       )}
