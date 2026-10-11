@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import type { AddEntry } from '../types'
 import { identifyClothing, removeBackground } from '../ai'
+import { hasPlainBackground } from '../image'
 import { useStore } from '../store'
 import { useBlobUrl } from '../useBlobUrl'
 import ItemForm from '../components/ItemForm'
@@ -41,12 +42,16 @@ export default function AddItem({ onDone }: { onDone: () => void }) {
       .catch((err) => patch(e.key, { ai: 'failed', aiError: err instanceof Error ? err.message : String(err) }))
   }
 
-  // 只走 Seedream；失败就用原图
+  // 已是白底/透明底（电商图、已抠图）直接跳过；否则走 Seedream，失败用原图
   const runBg = (e: AddEntry) => {
-    if (!settings.doubaoApiKey || !settings.aiProxyUrl) return
+    if (!settings.doubaoApiKey) return
     patch(e.key, { bg: 'loading', bgError: '' })
-    removeBackground(e.photo, settings)
-      .then((b) => patch(e.key, { cutout: b, bg: 'done' }))
+    hasPlainBackground(e.photo)
+      .then((plain) => {
+        // cutout 留空 = 跳过处理，保存时用原图
+        if (plain) return patch(e.key, { bg: 'done' })
+        return removeBackground(e.photo, settings).then((b) => patch(e.key, { cutout: b, bg: 'done' }))
+      })
       .catch((err) => patch(e.key, { bg: 'failed', bgError: err instanceof Error ? err.message : String(err) }))
   }
 
@@ -121,13 +126,14 @@ export default function AddItem({ onDone }: { onDone: () => void }) {
       {url && <img className="preview" src={url} alt="" />}
       {entry?.bg === 'loading' && <p className="muted">去背景中…</p>}
       {entry?.bg === 'failed' && <p className="muted">去背景失败，使用原图{entry.bgError ? `（${entry.bgError}）` : ''}</p>}
+      {entry?.bg === 'done' && !entry.cutout && <p className="muted">检测到已是白底/透明图，已自动跳过去背景</p>}
       {entry?.cutout && (
         <div className="chips">
           <button className={entry.useCutout ? 'on' : ''} onClick={() => patch(entry.key, { useCutout: true })}>白底图</button>
           <button className={!entry.useCutout ? 'on' : ''} onClick={() => patch(entry.key, { useCutout: false })}>原图</button>
         </div>
       )}
-      {entry && entry.bg !== 'loading' && settings.doubaoApiKey && settings.aiProxyUrl && (
+      {entry && entry.bg !== 'loading' && settings.doubaoApiKey && (
         <button className="link" onClick={() => refine(entry)}>效果不好？AI 精修（约 1 分钟）</button>
       )}
 

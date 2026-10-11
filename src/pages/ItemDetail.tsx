@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { removeBackground } from '../ai'
+import { hasPlainBackground } from '../image'
 import { useStore } from '../store'
 import { autoWearLevel, wearLevel } from '../frequency'
 import { CATEGORIES, WEAR_LEVELS, type WardrobeItem, type WearLevel } from '../types'
@@ -25,14 +26,22 @@ function EditItem({ item, onDone }: { item: WardrobeItem; onDone: () => void }) 
     setPhoto(f)
     setOriginal(undefined)
     setBg('idle')
+    setBgError('')
     if (settings.removeBg === false) return
+    if (!settings.doubaoApiKey) {
+      setBgError('未配置 API Key')
+      setBg('failed')
+      return
+    }
     setBg('loading')
-    // 只走 Seedream；失败就用原图
-    const p = settings.doubaoApiKey && settings.aiProxyUrl
-      ? removeBackground(f, settings)
-      : Promise.reject(new Error('未配置 API Key 或中转地址'))
-    p
-      .then((b) => {
+    // 已是白底/透明底就保留原图；否则走 Seedream，失败用原图
+    hasPlainBackground(f)
+      .then(async (plain) => {
+        if (plain) {
+          setBg('idle')
+          return
+        }
+        const b = await removeBackground(f, settings)
         setPhoto(b)
         setOriginal(f)
         setBg('idle')
@@ -88,7 +97,7 @@ function EditItem({ item, onDone }: { item: WardrobeItem; onDone: () => void }) 
       {original && (
         <button className="link" onClick={swap}>⇄ 切换到另一张（白底图 / 原图）</button>
       )}
-      {bg !== 'loading' && settings.doubaoApiKey && settings.aiProxyUrl && (
+      {bg !== 'loading' && settings.doubaoApiKey && (
         <button className="link" onClick={refine}>效果不好？AI 精修（约 1 分钟）</button>
       )}
       <div className="photo-row">
@@ -142,11 +151,11 @@ export default function ItemDetail({ id, onBack }: { id: string; onBack: () => v
         </div>
       </div>
 
-      <label>常穿度（当前：{WEAR_LEVELS.find((w) => w.key === effective)?.label}
+      <label>常穿度（当前：{effective ? WEAR_LEVELS.find((w) => w.key === effective)?.label : '没定义'}
         {item.manualWearLevel ? ' · 手动' : ' · 自动' }）</label>
       <div className="chips">
         <button className={!item.manualWearLevel ? 'on' : ''} onClick={() => setManual(undefined)}>
-          自动（{WEAR_LEVELS.find((w) => w.key === auto)?.label}）
+          自动（{auto ? WEAR_LEVELS.find((w) => w.key === auto)?.label : '没定义'}）
         </button>
         {WEAR_LEVELS.map((w) => (
           <button

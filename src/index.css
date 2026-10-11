@@ -94,6 +94,28 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .card-title { font-size: 0.92rem; font-weight: 600; }
 .card-sub { font-size: 0.78rem; color: var(--muted); margin: 2px 0 6px; }
 
+/* 衣柜卡片：属性 tag（点开下拉编辑） */
+.card-img { display: block; width: 100%; padding: 0; border: 0; background: var(--soft); cursor: pointer; }
+.card-title { cursor: pointer; }
+.tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.tag {
+  padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--soft); color: var(--ink); font-size: 0.72rem; white-space: nowrap;
+}
+.tag.on { border-color: var(--accent); color: var(--accent); }
+.tag.tag-add { border-style: dashed; color: var(--muted); background: transparent; }
+.tag.lv-often { background: var(--often-bg); color: var(--often-ink); border-color: transparent; }
+.tag.lv-rarely { background: var(--rarely-bg); color: var(--rarely-ink); border-color: transparent; }
+.tag.lv-never { background: var(--never-bg); color: var(--never-ink); border-color: transparent; }
+.tag.lv-none { color: var(--muted); }
+.tag-drop {
+  margin-top: 6px; padding: 8px; border: 1px solid var(--line);
+  border-radius: 12px; background: var(--bg);
+}
+.tag-drop.chips { margin-bottom: 0; gap: 6px; }
+.tag-drop button { font-size: 0.8rem; padding: 5px 10px; }
+
+
 .badge {
   display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.72rem;
   background: var(--soft); color: var(--muted);
@@ -162,3 +184,9 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .theme-opt.on { border-color: var(--accent); }
 .theme-opt .sw { display: flex; gap: 4px; }
 .theme-opt .sw i { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.08); }
+
+/* 弹窗（保存设置确认等） */
+.modal-mask { position: fixed; inset: 0; background: rgba(30, 40, 30, 0.35); display: flex; align-items: center; justify-content: center; z-index: 90; }
+.modal-box { background: var(--card); border-radius: var(--radius); box-shadow: 0 10px 34px rgba(40, 60, 40, 0.25); padding: 24px 30px; text-align: center; max-width: 82vw; }
+.modal-title { margin: 0 0 16px; font-size: 1.05em; }
+

@@ -16,6 +16,15 @@ export type Season = (typeof SEASONS)[number]
 
 export const STYLE_TAGS = ['通勤', '休闲', '运动', '甜美', '正式', '度假'] as const
 
+/** 与 AI 识别提示词约定的标准色表（ai.ts 校验过滤、衣柜页颜色快捷选项共用） */
+export const STANDARD_COLORS = [
+  '黑', '白', '米白', '米黄', '灰', '卡其', '驼色', '咖啡', '藏青', '浅蓝',
+  '牛仔蓝', '粉', '玫红', '红', '酒红', '橙', '黄', '浅绿', '墨绿', '紫', '花色',
+]
+
+/** 常见材质（衣柜页材质 tag 的快捷选项；材质字段本身仍是自由文本） */
+export const MATERIALS = ['棉', '麻', '丝', '羊毛', '羊绒', '针织', '牛仔', '皮革', '涤纶', '尼龙', '雪纺', '混纺']
+
 export type WearLevel = 'often' | 'rarely' | 'never'
 
 export const WEAR_LEVELS: { key: WearLevel; label: string }[] = [
@@ -85,7 +94,7 @@ export interface AddEntry {
 export interface Settings {
   theme?: Theme // 默认 forest
   doubaoApiKey?: string
-  doubaoModel?: string // 默认 doubao-seed-2.1-turbo
+  doubaoModel?: string // 默认 doubao-seed-2.1-pro（turbo 即将下线）
   aiProxyUrl?: string // 留空用默认代理
   removeBg?: boolean // 录入时用 Seedream 去背景（默认开）
   bgModel?: string // 默认 doubao-seedream-5-0-pro
