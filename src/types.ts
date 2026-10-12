@@ -25,6 +25,23 @@ export const STANDARD_COLORS = [
 /** 常见材质（衣柜页材质 tag 的快捷选项；材质字段本身仍是自由文本） */
 export const MATERIALS = ['棉', '麻', '丝', '羊毛', '羊绒', '针织', '牛仔', '皮革', '涤纶', '尼龙', '雪纺', '混纺']
 
+/** 大众品牌（表单快捷选项；品牌字段本身仍是自由文本，可手动输入其他品牌） */
+export const BRANDS = [
+  '优衣库', 'ZARA', 'H&M', 'UR', 'MUJI', 'GAP',
+  '太平鸟', '森马', '美特斯邦威', '海澜之家', '波司登', 'GXG', '杰克琼斯', 'ONLY', 'VERO MODA', '乐町',
+  '李宁', '安踏', '耐克', '阿迪达斯', 'New Balance', '斯凯奇', '匡威', 'Vans',
+]
+
+/** 价格区间（chips 快选时写入区间中间值，仍可手动输入精确价格） */
+export const PRICE_RANGES = [
+  { label: '100以内', min: 0, max: 99, mid: 80 },
+  { label: '100-300', min: 100, max: 299, mid: 200 },
+  { label: '300-500', min: 300, max: 499, mid: 400 },
+  { label: '500-1000', min: 500, max: 999, mid: 750 },
+  { label: '1000-2000', min: 1000, max: 1999, mid: 1500 },
+  { label: '2000以上', min: 2000, max: Infinity, mid: 2500 },
+]
+
 export type WearLevel = 'often' | 'rarely' | 'never'
 
 export const WEAR_LEVELS: { key: WearLevel; label: string }[] = [
@@ -39,7 +56,7 @@ export interface WardrobeItem {
   originalPhoto?: Blob // 去背景前的原图
   category: Category
   brand?: string
-  purchasedAt?: string // YYYY-MM
+  purchasedAt?: string // 购买年份 YYYY（旧数据可能是 YYYY-MM）
   price?: number
   colors: string[]
   styles: string[]

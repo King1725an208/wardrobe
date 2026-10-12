@@ -2,17 +2,19 @@ import { useRef, useState } from 'react'
 import { removeBackground } from '../ai'
 import { hasPlainBackground } from '../image'
 import { useStore } from '../store'
-import { autoWearLevel, wearLevel } from '../frequency'
-import { CATEGORIES, WEAR_LEVELS, type WardrobeItem, type WearLevel } from '../types'
+import { autoWearLevel } from '../frequency'
+import { WEAR_LEVELS, type WardrobeItem, type WearLevel } from '../types'
 import { useBlobUrl } from '../useBlobUrl'
 import ItemForm from '../components/ItemForm'
 import { draftFromItem, draftToFields, type Draft } from '../draft'
 
 function EditItem({ item, onDone }: { item: WardrobeItem; onDone: () => void }) {
-  const { settings, update } = useStore()
+  const { outfits, settings, update, remove } = useStore()
   const camRef = useRef<HTMLInputElement>(null)
   const galRef = useRef<HTMLInputElement>(null)
   const [draft, setDraft] = useState<Draft>(() => draftFromItem(item))
+  // 常穿度手动档位（undefined = 跟随自动），随「保存修改」一起写入
+  const [manualLv, setManualLv] = useState<WearLevel | undefined>(item.manualWearLevel)
   // 当前主图 / 原图（换照片后两者都会被替换）
   const [photo, setPhoto] = useState<Blob>(item.photo)
   const [original, setOriginal] = useState<Blob | undefined>(item.originalPhoto)
@@ -20,6 +22,11 @@ function EditItem({ item, onDone }: { item: WardrobeItem; onDone: () => void }) 
   const [bgError, setBgError] = useState('')
   const [saving, setSaving] = useState(false)
   const url = useBlobUrl(photo)
+
+  const lvLabel = (lv: WearLevel | undefined) => (lv ? WEAR_LEVELS.find((w) => w.key === lv)?.label : '没定义')
+  const auto = autoWearLevel(item, settings)
+  const effective = manualLv ?? auto
+  const history = outfits.filter((o) => o.itemIds.includes(item.id))
 
   const onNewPhoto = (f: File | undefined) => {
     if (!f) return
@@ -78,16 +85,22 @@ function EditItem({ item, onDone }: { item: WardrobeItem; onDone: () => void }) 
   const save = async () => {
     setSaving(true)
     try {
-      await update({ ...item, ...draftToFields(draft), photo, originalPhoto: original })
+      await update({ ...item, ...draftToFields(draft), manualWearLevel: manualLv, photo, originalPhoto: original })
       onDone()
     } finally {
       setSaving(false)
     }
   }
 
+  const del = async () => {
+    if (!confirm('确定删除这件衣服吗？')) return
+    await remove(item.id)
+    onDone()
+  }
+
   return (
     <div className="page">
-      <button className="back" onClick={onDone}>← 取消</button>
+      <button className="back" onClick={onDone}>← 返回</button>
       <h1>编辑衣服</h1>
       <input ref={camRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => onNewPhoto(e.target.files?.[0])} />
       <input ref={galRef} type="file" accept="image/*" hidden onChange={(e) => onNewPhoto(e.target.files?.[0])} />
@@ -105,70 +118,23 @@ function EditItem({ item, onDone }: { item: WardrobeItem; onDone: () => void }) 
         <button className="photo-btn" onClick={() => galRef.current?.click()}>🖼️ 换一张</button>
       </div>
       <ItemForm value={draft} onChange={setDraft} />
-      <button className="primary" disabled={saving || bg === 'loading'} onClick={save}>
-        {saving ? '保存中…' : '保存修改'}
-      </button>
-    </div>
-  )
-}
 
-export default function ItemDetail({ id, onBack }: { id: string; onBack: () => void }) {
-  const { items, outfits, settings, update, remove } = useStore()
-  const item = items.find((i) => i.id === id)
-  const [editing, setEditing] = useState(false)
-  const url = useBlobUrl(item?.photo)
-  if (!item) return null
-  if (editing) return <EditItem item={item} onDone={() => setEditing(false)} />
-
-  const auto = autoWearLevel(item, settings)
-  const effective = wearLevel(item, settings)
-  const history = outfits.filter((o) => o.itemIds.includes(id))
-
-  const setManual = (lv: WearLevel | undefined) => update({ ...item, manualWearLevel: lv })
-
-  return (
-    <div className="page">
-      <div className="bar">
-        <button className="back" onClick={onBack}>← 返回</button>
-        <button className="link" onClick={() => setEditing(true)}>✎ 编辑</button>
-      </div>
-      {url && <img className="preview" src={url} alt="" />}
-      <h2>
-        {item.brand || CATEGORIES.find((c) => c.key === item.category)?.label}
-        {item.price ? <span className="muted"> ¥{item.price}</span> : null}
-      </h2>
-      <div className="attrs">
-        <div>分类：{CATEGORIES.find((c) => c.key === item.category)?.label}</div>
-        <div>季节：{item.season}</div>
-        {item.colors.length > 0 && <div>颜色：{item.colors.join('、')}</div>}
-        {item.styles.length > 0 && <div>风格：{item.styles.join('、')}</div>}
-        {item.purchasedAt && <div>购买：{item.purchasedAt}</div>}
-        {item.material && <div>材质：{item.material}</div>}
-        {item.note && <div>备注：{item.note}</div>}
-        <div>
-          穿过 {item.wearCount} 次
-          {item.lastWornAt ? `，最近 ${new Date(item.lastWornAt).toLocaleDateString('zh-CN')}` : ''}
-        </div>
-      </div>
-
-      <label>常穿度（当前：{effective ? WEAR_LEVELS.find((w) => w.key === effective)?.label : '没定义'}
-        {item.manualWearLevel ? ' · 手动' : ' · 自动' }）</label>
+      <label>常穿度（当前：{lvLabel(effective)}{manualLv ? ' · 手动' : ' · 自动'}）</label>
       <div className="chips">
-        <button className={!item.manualWearLevel ? 'on' : ''} onClick={() => setManual(undefined)}>
-          自动（{auto ? WEAR_LEVELS.find((w) => w.key === auto)?.label : '没定义'}）
+        <button className={!manualLv ? 'on' : ''} onClick={() => setManualLv(undefined)}>
+          自动（{lvLabel(auto)}）
         </button>
         {WEAR_LEVELS.map((w) => (
-          <button
-            key={w.key}
-            className={item.manualWearLevel === w.key ? 'on' : ''}
-            onClick={() => setManual(w.key)}
-          >
+          <button key={w.key} className={manualLv === w.key ? 'on' : ''} onClick={() => setManualLv(w.key)}>
             {w.label}
           </button>
         ))}
       </div>
 
       <label>穿着记录（{history.length}）</label>
+      <p className="muted">
+        穿过 {item.wearCount} 次{item.lastWornAt ? `，最近 ${new Date(item.lastWornAt).toLocaleDateString('zh-CN')}` : ''}
+      </p>
       <div className="history">
         {history.length === 0 && <span className="muted">还没有穿过</span>}
         {history.map((o) => (
@@ -176,17 +142,17 @@ export default function ItemDetail({ id, onBack }: { id: string; onBack: () => v
         ))}
       </div>
 
-      <button
-        className="danger"
-        onClick={() => {
-          if (confirm('确定删除这件衣服吗？')) {
-            remove(item.id)
-            onBack()
-          }
-        }}
-      >
-        删除这件衣服
+      <button className="primary" disabled={saving || bg === 'loading'} onClick={save}>
+        {saving ? '保存中…' : '保存修改'}
       </button>
+      <button className="danger" onClick={del}>删除这件衣服</button>
     </div>
   )
+}
+
+// 衣柜页点卡片直达编辑页（无中间详情视图）；key 保证换衣服时表单状态重置
+export default function ItemDetail({ id, onBack }: { id: string; onBack: () => void }) {
+  const item = useStore((s) => s.items.find((i) => i.id === id))
+  if (!item) return null
+  return <EditItem key={item.id} item={item} onDone={onBack} />
 }

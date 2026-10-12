@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useStore } from '../store'
 import { wearLevel } from '../frequency'
+import { removeBackground } from '../ai'
 import {
   CATEGORIES, MATERIALS, SEASONS, STANDARD_COLORS, STYLE_TAGS, WEAR_LEVELS,
   type Category, type WearLevel,
@@ -45,6 +46,7 @@ function Card({ item, onOpen }: { item: WardrobeItem; onOpen: (id: string) => vo
         <div className="tags">
           {tag('category', catLabel)}
           {tag('season', item.season)}
+          {item.purchasedAt && <span className="tag">{item.purchasedAt.slice(0, 4)}年</span>}
           {item.colors.length ? item.colors.map((c) => tag('color', c)) : tag('color', '＋颜色', 'tag-add')}
           {item.styles.length ? item.styles.map((s) => tag('style', s)) : tag('style', '＋风格', 'tag-add')}
           {item.material ? tag('material', item.material) : tag('material', '＋材质', 'tag-add')}
@@ -115,17 +117,21 @@ function Card({ item, onOpen }: { item: WardrobeItem; onOpen: (id: string) => vo
 }
 
 export default function Wardrobe({ onOpen }: { onOpen: (id: string) => void }) {
-  const { items, settings } = useStore()
+  const { items, settings, update } = useStore()
   const [cat, setCat] = useState<Category | 'all'>('all')
   const [season, setSeason] = useState<string>('all')
   const [style, setStyle] = useState<string>('all')
   const [lv, setLv] = useState<WearLevel | 'all' | 'none'>('all')
   const [q, setQ] = useState('')
   const [sort, setSort] = useState<'new' | 'worn' | 'price'>('new')
+  const [rawOnly, setRawOnly] = useState(false) // 只看待去背景的原图
+  const [bgProg, setBgProg] = useState<{ done: number; total: number } | null>(null)
+  const [bgMsg, setBgMsg] = useState('')
 
   const filtered = useMemo(() => {
     let list = items
     if (cat !== 'all') list = list.filter((i) => i.category === cat)
+    if (rawOnly) list = list.filter((i) => !i.originalPhoto) // 没有原图备份 = 没去背景
     if (season !== 'all') list = list.filter((i) => i.season === season)
     if (style !== 'all') list = list.filter((i) => i.styles.includes(style))
     if (lv === 'none') list = list.filter((i) => wearLevel(i, settings) === undefined)
@@ -144,11 +150,49 @@ export default function Wardrobe({ onOpen }: { onOpen: (id: string) => void }) {
       if (sort === 'price') return (b.price ?? 0) - (a.price ?? 0)
       return b.createdAt - a.createdAt
     })
-  }, [items, cat, season, style, lv, q, sort, settings])
+  }, [items, cat, season, style, lv, q, sort, settings, rawOnly])
+
+  // 批量去背景：一张张顺序调 Seedream，成功后主图换成白底图、原图存进 originalPhoto
+  const batchRemoveBg = async () => {
+    if (!settings.doubaoApiKey) {
+      alert('请先在「设置」页配置 API Key')
+      return
+    }
+    const targets = filtered.filter((i) => !i.originalPhoto) // 处理中已完成的会离开筛选，先取快照
+    if (!targets.length) return
+    setBgMsg('')
+    setBgProg({ done: 0, total: targets.length })
+    let failed = 0
+    let errMsg = ''
+    for (const [idx, it] of targets.entries()) {
+      try {
+        const cutout = await removeBackground(it.photo, settings)
+        await update({ ...it, photo: cutout, originalPhoto: it.photo })
+      } catch (e) {
+        failed++
+        if (!errMsg) errMsg = e instanceof Error ? e.message : String(e)
+      }
+      setBgProg({ done: idx + 1, total: targets.length })
+    }
+    setBgProg(null)
+    setBgMsg(`去背景完成：成功 ${targets.length - failed} 件${failed ? `，失败 ${failed} 件（${errMsg}）` : ''}`)
+  }
 
   return (
     <div className="page">
-      <h1>我的衣柜 <span className="muted">{items.length} 件</span></h1>
+      <h1>我的衣柜 <span className="muted">{filtered.length} 件</span></h1>
+      {rawOnly && (
+        <div className="bg-banner">
+          {filtered.length > 0 ? (
+            <button className="primary" disabled={bgProg !== null} onClick={batchRemoveBg}>
+              {bgProg ? `✨ 去背景中 ${bgProg.done}/${bgProg.total}…` : `✨ 一键去背景（${filtered.length} 件）`}
+            </button>
+          ) : (
+            <p className="muted">没有待去背景的原图</p>
+          )}
+          {bgMsg && <p className="muted">{bgMsg}</p>}
+        </div>
+      )}
       <input className="search" placeholder="搜索品牌/备注/颜色" value={q} onChange={(e) => setQ(e.target.value)} />
       <div className="cats">
         <button className={cat === 'all' ? 'on' : ''} onClick={() => setCat('all')}>全部</button>
@@ -183,9 +227,14 @@ export default function Wardrobe({ onOpen }: { onOpen: (id: string) => void }) {
           <option value="worn">最近穿过</option>
           <option value="price">价格</option>
         </select>
+        <button className={rawOnly ? 'on' : ''} onClick={() => { setRawOnly((v) => !v); setBgMsg('') }}>
+          原图
+        </button>
       </div>
       {filtered.length === 0 ? (
-        <p className="muted center-pad">还没有衣服，点底部「＋录入」拍一件吧</p>
+        <p className="muted center-pad">
+          {items.length === 0 ? '还没有衣服，点底部「＋录入」拍一件吧' : '没有符合条件的衣服，换个筛选试试'}
+        </p>
       ) : (
         <div className="grid">
           {filtered.map((i) => (

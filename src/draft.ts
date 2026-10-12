@@ -32,7 +32,7 @@ export function draftFromItem(i: WardrobeItem): Draft {
   return {
     category: i.category,
     brand: i.brand ?? '',
-    purchasedAt: i.purchasedAt ?? '',
+    purchasedAt: i.purchasedAt?.slice(0, 4) ?? '', // 统一取年份（旧数据可能是 YYYY-MM）
     price: i.price != null ? String(i.price) : '',
     colors: i.colors.join(' '),
     styles: i.styles,
