@@ -68,6 +68,7 @@ export interface WardrobeItem {
   lastWornAt?: number
   wearCount: number
   manualWearLevel?: WearLevel
+  dupOf?: string // 查重标记：与 id 为 dupOf 的保留件照片重复（每组最早录入的一件不打标）
   // 预留云同步字段
   userId?: string
   syncedAt?: number
@@ -106,6 +107,7 @@ export interface AddEntry {
   ai: Stage
   aiError: string
   draft: import('./draft').Draft
+  dupOf?: string // 录入查重命中：衣柜中某件的 id；与本批另一张照片重复时为 'batch'
 }
 
 export interface Settings {

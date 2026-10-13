@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useStore } from '../store'
 import { wearLevel } from '../frequency'
 import { removeBackground } from '../ai'
+import { findDuplicates } from '../dup'
 import {
   CATEGORIES, MATERIALS, SEASONS, STANDARD_COLORS, STYLE_TAGS, WEAR_LEVELS,
   type Category, type WearLevel,
@@ -44,6 +45,7 @@ function Card({ item, onOpen }: { item: WardrobeItem; onOpen: (id: string) => vo
           {item.brand || catLabel}
         </div>
         <div className="tags">
+          {item.dupOf && <span className="tag dup">重复</span>}
           {tag('category', catLabel)}
           {tag('season', item.season)}
           {item.purchasedAt && <span className="tag">{item.purchasedAt.slice(0, 4)}年</span>}
@@ -127,11 +129,15 @@ export default function Wardrobe({ onOpen }: { onOpen: (id: string) => void }) {
   const [rawOnly, setRawOnly] = useState(false) // 只看待去背景的原图
   const [bgProg, setBgProg] = useState<{ done: number; total: number } | null>(null)
   const [bgMsg, setBgMsg] = useState('')
+  const [dupOnly, setDupOnly] = useState(false) // 只看被查重标记的衣服
+  const [dupProg, setDupProg] = useState<{ done: number; total: number } | null>(null)
+  const [dupMsg, setDupMsg] = useState('')
 
   const filtered = useMemo(() => {
     let list = items
     if (cat !== 'all') list = list.filter((i) => i.category === cat)
     if (rawOnly) list = list.filter((i) => !i.originalPhoto) // 没有原图备份 = 没去背景
+    if (dupOnly) list = list.filter((i) => i.dupOf) // 只看被查重标记的
     if (season !== 'all') list = list.filter((i) => i.season === season)
     if (style !== 'all') list = list.filter((i) => i.styles.includes(style))
     if (lv === 'none') list = list.filter((i) => wearLevel(i, settings) === undefined)
@@ -150,7 +156,7 @@ export default function Wardrobe({ onOpen }: { onOpen: (id: string) => void }) {
       if (sort === 'price') return (b.price ?? 0) - (a.price ?? 0)
       return b.createdAt - a.createdAt
     })
-  }, [items, cat, season, style, lv, q, sort, settings, rawOnly])
+  }, [items, cat, season, style, lv, q, sort, settings, rawOnly, dupOnly])
 
   // 批量去背景：一张张顺序调 Seedream，成功后主图换成白底图、原图存进 originalPhoto
   const batchRemoveBg = async () => {
@@ -176,6 +182,28 @@ export default function Wardrobe({ onOpen }: { onOpen: (id: string) => void }) {
     }
     setBgProg(null)
     setBgMsg(`去背景完成：成功 ${targets.length - failed} 件${failed ? `，失败 ${failed} 件（${errMsg}）` : ''}`)
+  }
+
+  // 全衣柜查重：按照片感知哈希分组，每组保留最早录入的一件，其余打上 dupOf 黄色标记。
+  // 幂等：先清掉所有旧标记再按本次结果打标，可反复执行。
+  const runDedup = async () => {
+    if (!items.length) return
+    setDupMsg('')
+    setDupProg({ done: 0, total: items.length })
+    const groups = await findDuplicates(items, (done, total) => setDupProg({ done, total }))
+    const marks = new Map<string, string>() // 被标记件 id -> 保留件 id
+    groups.forEach((g) => g.dups.forEach((d) => marks.set(d.id, g.keep.id)))
+    for (const it of items) {
+      const want = marks.get(it.id)
+      if (want && it.dupOf !== want) await update({ ...it, dupOf: want })
+      else if (!want && it.dupOf) await update({ ...it, dupOf: undefined })
+    }
+    setDupProg(null)
+    setDupMsg(
+      marks.size
+        ? `发现 ${groups.length} 组重复：每组保留最早录入的 1 件，其余 ${marks.size} 件已标黄「重复」（点上方「重复」筛选可集中查看）`
+        : '没有发现重复的衣服',
+    )
   }
 
   return (
@@ -230,7 +258,14 @@ export default function Wardrobe({ onOpen }: { onOpen: (id: string) => void }) {
         <button className={rawOnly ? 'on' : ''} onClick={() => { setRawOnly((v) => !v); setBgMsg('') }}>
           原图
         </button>
+        <button className={dupOnly ? 'on' : ''} onClick={() => setDupOnly((v) => !v)}>
+          重复
+        </button>
+        <button disabled={dupProg !== null} onClick={runDedup}>
+          {dupProg ? `查重中 ${dupProg.done}/${dupProg.total}…` : '查重'}
+        </button>
       </div>
+      {dupMsg && <p className="muted">{dupMsg}</p>}
       {filtered.length === 0 ? (
         <p className="muted center-pad">
           {items.length === 0 ? '还没有衣服，点底部「＋录入」拍一件吧' : '没有符合条件的衣服，换个筛选试试'}

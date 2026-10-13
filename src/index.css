@@ -111,6 +111,8 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .tag.lv-rarely { background: var(--rarely-bg); color: var(--rarely-ink); border-color: transparent; }
 .tag.lv-never { background: var(--never-bg); color: var(--never-ink); border-color: transparent; }
 .tag.lv-none { color: var(--muted); }
+/* 查重：重复标记（黄色标识，三套主题下保持一致） */
+.tag.dup { background: #f2c94c; color: #5c4a0e; border-color: transparent; }
 .tag-drop {
   margin-top: 6px; padding: 8px; border: 1px solid var(--line);
   border-radius: 12px; background: var(--bg);
@@ -180,6 +182,14 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .thumb-dot { position: absolute; right: 3px; top: 3px; width: 10px; height: 10px; border-radius: 50%; }
 .thumb-dot.busy { background: #e0b25a; animation: blink 1s infinite; }
 .thumb-dot.warn { background: #b05050; }
+.thumb-dot.dup { background: #f2c94c; }
+
+/* 录入查重警示条 */
+.dup-hint {
+  display: flex; gap: 10px; align-items: center; margin-top: 8px; padding: 8px 10px;
+  background: #fdf3d0; border: 1px solid #eed98f; border-radius: 12px; font-size: 0.85rem;
+}
+.dup-hint img { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; flex: 0 0 44px; }
 @keyframes blink { 50% { opacity: 0.3; } }
 
 .theme-row { display: flex; gap: 10px; }
