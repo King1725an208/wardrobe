@@ -59,7 +59,7 @@ export function draftToFields(d: Draft) {
   return {
     category: d.category,
     brand: d.brand.trim() || undefined,
-    purchasedAt: d.purchasedAt || undefined,
+    purchasedAt: /^\d{4}$/.test(d.purchasedAt) ? d.purchasedAt : undefined, // 只接受四位年份
     price: d.price ? Number(d.price) : undefined,
     colors: d.colors.split(/[\s,，/、]+/).filter(Boolean),
     styles: d.styles,

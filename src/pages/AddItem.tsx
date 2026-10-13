@@ -21,19 +21,22 @@ function Thumb({ e, on, onClick }: { e: AddEntry; on: boolean; onClick: () => vo
   )
 }
 
-/** 录入查重警示：与衣柜里某件 / 本批另一张的照片高度相似（仅提示，不拦截保存） */
-function DupHint({ dupOf }: { dupOf: string }) {
-  const item = useStore((s) => s.items.find((i) => i.id === dupOf))
+/** 录入查重警示：撞图时暂停 AI，确认「不是重复」才继续识别，也可直接移除这张 */
+function DupHint({ e, onContinue, onRemove }: { e: AddEntry; onContinue: () => void; onRemove: () => void }) {
+  const item = useStore((s) => s.items.find((i) => i.id === e.dupOf))
   const url = useBlobUrl(item?.photo)
   return (
     <div className="dup-hint">
       {url && <img src={url} alt="" />}
       <span>
         {item
-          ? `⚠️ 与衣柜里已有的「${item.brand || '一件衣服'}」照片高度相似，疑似重复`
-          : '⚠️ 与本批中另一张照片高度相似，疑似重复'}
-        ；确认不是同一件可照常保存。
+          ? `⚠️ 与衣柜里已有的「${item.brand || '一件衣服'}」照片高度相似，疑似重复，已暂停 AI 识别`
+          : '⚠️ 与本批中另一张照片高度相似，疑似重复，已暂停 AI 识别'}
       </span>
+      <div className="dup-hint-btns">
+        <button onClick={onContinue}>不是重复，继续识别</button>
+        <button className="danger" onClick={onRemove}>移除</button>
+      </div>
     </div>
   )
 }
@@ -84,26 +87,28 @@ export default function AddItem({ onDone }: { onDone: () => void }) {
   }
 
   // 录入查重：与衣柜已有衣服 + 本批其他照片比对感知哈希（纯本地计算，无需 API）
-  const checkDup = async (e: AddEntry) => {
+  // 返回 true = 疑似重复：调用方应暂停 AI，等人确认
+  const checkDup = async (e: AddEntry): Promise<boolean> => {
     try {
       const h = await photoHash(e.key, e.photo)
       for (const it of useStore.getState().items) {
         // 衣柜件比主图+原图全部指纹：它存的可能只是 AI 白底图，单比主图对不上手里的原图
         if (minHashDistance([h], await itemHashes(it)) <= DUP_THRESHOLD) {
           patch(e.key, { dupOf: it.id })
-          return
+          return true
         }
       }
       for (const o of useStore.getState().addEntries) {
         if (o.key === e.key) continue
         if (hashDistance(h, await photoHash(o.key, o.photo)) <= DUP_THRESHOLD) {
           patch(e.key, { dupOf: 'batch' })
-          return
+          return true
         }
       }
     } catch {
       /* 哈希失败（如 HEIC 解码失败）不阻塞录入 */
     }
+    return false
   }
 
   const onFiles = (files: FileList | null) => {
@@ -121,8 +126,10 @@ export default function AddItem({ onDone }: { onDone: () => void }) {
     setCur(entries.length)
     setEntries((list) => [...list, ...added])
     added.forEach((e) => {
-      process(e)
-      checkDup(e)
+      // 先查重：疑似重复时暂停 AI（识别+去背景），确认「不是重复」后才补跑，省调用费
+      checkDup(e).then((dup) => {
+        if (!dup) process(e)
+      })
     })
   }
 
@@ -169,7 +176,16 @@ export default function AddItem({ onDone }: { onDone: () => void }) {
       )}
 
       {url && <img className="preview" src={url} alt="" />}
-      {entry?.dupOf && <DupHint dupOf={entry.dupOf} />}
+      {entry?.dupOf && (
+        <DupHint
+          e={entry}
+          onContinue={() => {
+            patch(entry.key, { dupOf: undefined })
+            process(entry) // 确认不是重复：补上被暂停的 AI 识别/去背景
+          }}
+          onRemove={removeCur}
+        />
+      )}
       {entry?.bg === 'loading' && <p className="muted">去背景中…</p>}
       {entry?.bg === 'failed' && <p className="muted">去背景失败，使用原图{entry.bgError ? `（${entry.bgError}）` : ''}</p>}
       {entry?.bg === 'done' && !entry.cutout && <p className="muted">检测到已是白底/透明图，已自动跳过去背景</p>}

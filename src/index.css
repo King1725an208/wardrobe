@@ -75,6 +75,16 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .bg-banner .primary { margin-top: 0; }
 .bg-banner p { margin: 6px 0 0; }
 
+/* 标题行：左侧标题件数，右侧原图/查重按钮 */
+.h1-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.h1-row h1 { margin: 0; }
+.h1-btns { display: flex; gap: 8px; }
+.h1-btns button {
+  padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--card); white-space: nowrap; font-size: 0.88rem;
+}
+.h1-btns button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
 .cats, .chips, .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 .cats { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
 .cats button, .chips button, .filters select, .filters button {
@@ -111,8 +121,6 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .tag.lv-rarely { background: var(--rarely-bg); color: var(--rarely-ink); border-color: transparent; }
 .tag.lv-never { background: var(--never-bg); color: var(--never-ink); border-color: transparent; }
 .tag.lv-none { color: var(--muted); }
-/* 查重：重复标记（黄色标识，三套主题下保持一致） */
-.tag.dup { background: #f2c94c; color: #5c4a0e; border-color: transparent; }
 .tag-drop {
   margin-top: 6px; padding: 8px; border: 1px solid var(--line);
   border-radius: 12px; background: var(--bg);
@@ -190,6 +198,12 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
   background: #fdf3d0; border: 1px solid #eed98f; border-radius: 12px; font-size: 0.85rem;
 }
 .dup-hint img { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; flex: 0 0 44px; }
+.dup-hint-btns { display: flex; gap: 6px; margin-left: auto; flex: 0 0 auto; }
+.dup-hint-btns button {
+  padding: 5px 10px; border-radius: 999px; border: 1px solid #d9b13b;
+  background: #fff; font-size: 0.8rem; white-space: nowrap;
+}
+.dup-hint-btns button.danger { color: #b05050; border-color: #e3b8b8; }
 @keyframes blink { 50% { opacity: 0.3; } }
 
 .theme-row { display: flex; gap: 10px; }

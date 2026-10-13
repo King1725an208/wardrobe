@@ -102,6 +102,11 @@ export default function ItemForm({ value, onChange }: { value: Draft; onChange: 
           </button>
         )}
       </div>
+      <input
+        inputMode="numeric" maxLength={4} value={value.purchasedAt}
+        onChange={(e) => set('purchasedAt', e.target.value.replace(/\D/g, '').slice(0, 4))}
+        placeholder="手动输入四位年份，如 2019"
+      />
 
       <label>价格（¥）</label>
       <div className="chips">
