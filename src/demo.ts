@@ -64,7 +64,7 @@ export async function importDemoData(): Promise<number> {
 
   const created: { id: string; wearDaysAgo: number[] }[] = []
   for (const d of DEMO) {
-    const photo = await (await fetch(`/demo/${d.file}`)).blob()
+    const photo = await (await fetch(`${import.meta.env.BASE_URL}demo/${d.file}`)).blob()
     const item = await db.addItem({ ...d.item, photo, note: 'demo' })
     item.wearCount = d.wearCount
     if (d.lastWornDaysAgo != null) item.lastWornAt = Date.now() - d.lastWornDaysAgo * DAY

@@ -6,6 +6,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 declare const __BUILD_TIME__: string
 
 export default defineConfig({
+  base: '/wardrobe/', // 部署在 GitHub Pages 子路径 /wardrobe/ 下
   define: {
     __BUILD_TIME__: JSON.stringify(new Date().toISOString().slice(0, 16).replace('T', ' ')),
   },
@@ -21,8 +22,9 @@ export default defineConfig({
         background_color: '#f4f6f0',
         display: 'standalone',
         icons: [
-          { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+          // 相对路径：跟随部署子路径（GitHub Pages /wardrobe/）
+          { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
         ],
       },
       workbox: {
