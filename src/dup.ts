@@ -6,6 +6,11 @@ import type { WardrobeItem } from './types'
  * 两张图指纹的汉明距离 ≤ DUP_THRESHOLD 判为「同一张照片」。
  * 对重压缩 / 缩放 / 轻微裁剪稳健；不试图识别「同一件衣服的不同照片」
  * （那需要 AI 逐张比对，代价高、速度慢）。
+ *
+ * 关键：每件衣服可能存了两张图——主图 photo（可能是 AI 去背景后重绘的
+ * 白底图，和原图的像素、构图差很多）与原图 originalPhoto。只比主图会漏掉
+ * 「一件存了白底图、一件存了原图」的同源照片，所以每件取全部指纹，
+ * 任意一对距离 ≤ 阈值即判重复。
  */
 
 export const DUP_THRESHOLD = 8
@@ -59,8 +64,32 @@ export async function photoHash(key: string, photo: Blob): Promise<string> {
   return hash
 }
 
-export function itemHash(item: WardrobeItem): Promise<string> {
-  return photoHash(item.id, item.photo)
+/**
+ * 一件衣服的全部照片指纹：主图 + 原图（如有）。
+ * 单张解码失败（如 HEIC）只跳过该张；都失败则返回空数组（不参与比对）。
+ */
+export async function itemHashes(item: WardrobeItem): Promise<string[]> {
+  const hs: string[] = []
+  try {
+    hs.push(await photoHash(item.id, item.photo))
+  } catch {
+    /* 主图解码失败，跳过这张 */
+  }
+  if (item.originalPhoto) {
+    try {
+      hs.push(await photoHash(item.id + '#orig', item.originalPhoto))
+    } catch {
+      /* 原图解码失败，跳过这张 */
+    }
+  }
+  return hs
+}
+
+/** 两组指纹两两比对的最小汉明距离（任一空组返回 Infinity） */
+export function minHashDistance(a: string[], b: string[]): number {
+  let min = Infinity
+  for (const x of a) for (const y of b) min = Math.min(min, hashDistance(x, y))
+  return min
 }
 
 export interface DupGroup {
@@ -68,27 +97,45 @@ export interface DupGroup {
   dups: WardrobeItem[]
 }
 
-/** 全衣柜查重：按录入时间升序贪心分组，与组主指纹距离 ≤ 阈值即同组；解码失败的照片跳过 */
+/**
+ * 全衣柜查重：按录入时间升序贪心分组——每件的全部指纹（主图+原图）与
+ * 组内已有指纹任一对距离 ≤ 阈值即同组；每组最早录入的一件为保留件。
+ */
 export async function findDuplicates(
   items: WardrobeItem[],
   onProgress?: (done: number, total: number) => void,
 ): Promise<DupGroup[]> {
   const sorted = [...items].sort((a, b) => a.createdAt - b.createdAt)
-  const groups: { keep: WardrobeItem; hash: string; dups: WardrobeItem[] }[] = []
+  const hashed: { it: WardrobeItem; hs: string[] }[] = []
   let done = 0
   for (const it of sorted) {
-    let h: string | null = null
-    try {
-      h = await itemHash(it)
-    } catch {
-      /* 照片解码失败（如 HEIC），跳过比对 */
-    }
+    const hs = await itemHashes(it)
     done++
     onProgress?.(done, sorted.length)
-    if (!h) continue
-    const g = groups.find((g) => hashDistance(h, g.hash) <= DUP_THRESHOLD)
-    if (g) g.dups.push(it)
-    else groups.push({ keep: it, hash: h, dups: [] })
+    if (hs.length) hashed.push({ it, hs })
   }
+  const groups: { keep: WardrobeItem; hs: string[]; dups: WardrobeItem[] }[] = []
+  for (const { it, hs } of hashed) {
+    const g = groups.find((g) => minHashDistance(hs, g.hs) <= DUP_THRESHOLD)
+    if (g) {
+      g.dups.push(it)
+      g.hs.push(...hs) // 组内指纹取并集：后续件可与组中任意一件的任意一张图比对
+    } else {
+      groups.push({ keep: it, hs: [...hs], dups: [] })
+    }
+  }
+  // 诊断：控制台输出全衣柜最小照片距离，排查「明明一样却没查出」时用
+  let min = Infinity
+  let minPair: [string, string] | null = null
+  for (let i = 0; i < hashed.length; i++) {
+    for (let j = i + 1; j < hashed.length; j++) {
+      const d = minHashDistance(hashed[i].hs, hashed[j].hs)
+      if (d < min) {
+        min = d
+        minPair = [hashed[i].it.id, hashed[j].it.id]
+      }
+    }
+  }
+  if (minPair) console.debug(`[查重] 最小照片距离 ${min}（阈值 ${DUP_THRESHOLD}）`, minPair)
   return groups.filter((g) => g.dups.length > 0).map(({ keep, dups }) => ({ keep, dups }))
 }

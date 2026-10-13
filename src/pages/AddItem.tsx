@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import type { AddEntry } from '../types'
 import { identifyClothing, removeBackground } from '../ai'
 import { hasPlainBackground } from '../image'
-import { DUP_THRESHOLD, hashDistance, itemHash, photoHash } from '../dup'
+import { DUP_THRESHOLD, hashDistance, itemHashes, minHashDistance, photoHash } from '../dup'
 import { useStore } from '../store'
 import { useBlobUrl } from '../useBlobUrl'
 import ItemForm from '../components/ItemForm'
@@ -88,7 +88,8 @@ export default function AddItem({ onDone }: { onDone: () => void }) {
     try {
       const h = await photoHash(e.key, e.photo)
       for (const it of useStore.getState().items) {
-        if (hashDistance(h, await itemHash(it)) <= DUP_THRESHOLD) {
+        // 衣柜件比主图+原图全部指纹：它存的可能只是 AI 白底图，单比主图对不上手里的原图
+        if (minHashDistance([h], await itemHashes(it)) <= DUP_THRESHOLD) {
           patch(e.key, { dupOf: it.id })
           return
         }
