@@ -7,6 +7,7 @@ import { useStore } from '../store'
 import { useBlobUrl } from '../useBlobUrl'
 import ItemForm from '../components/ItemForm'
 import { applyGuess, draftToFields, emptyDraft } from '../draft'
+import { normalizePhotoFile } from '../photoFile'
 
 function Thumb({ e, on, onClick }: { e: AddEntry; on: boolean; onClick: () => void }) {
   const url = useBlobUrl(e.useCutout && e.cutout ? e.cutout : e.photo)
@@ -111,11 +112,23 @@ export default function AddItem({ onDone }: { onDone: () => void }) {
     return false
   }
 
-  const onFiles = (files: FileList | null) => {
+  const onFiles = async (files: FileList | null) => {
     if (!files?.length) return
-    const added: AddEntry[] = Array.from(files).map((f) => ({
+    // iPhone 导出的 .livp/.heic 浏览器和 AI 都不认，先归一化成 JPEG；读不出的跳过
+    const photos: Blob[] = []
+    const bad: string[] = []
+    for (const f of Array.from(files)) {
+      try {
+        photos.push(await normalizePhotoFile(f))
+      } catch {
+        bad.push(f.name)
+      }
+    }
+    if (bad.length) alert(`有 ${bad.length} 张照片读不出来，已跳过：${bad.join('、')}`)
+    if (!photos.length) return
+    const added: AddEntry[] = photos.map((p) => ({
       key: crypto.randomUUID(),
-      photo: f,
+      photo: p,
       useCutout: true,
       bg: 'idle',
       bgError: '',
@@ -164,8 +177,8 @@ export default function AddItem({ onDone }: { onDone: () => void }) {
   return (
     <div className="page">
       <h1>录入衣服 {entries.length > 1 && <span className="muted">{cur + 1}/{entries.length}</span>}</h1>
-      <input ref={camRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { onFiles(e.target.files); e.target.value = '' }} />
-      <input ref={galRef} type="file" accept="image/*" multiple hidden onChange={(e) => { onFiles(e.target.files); e.target.value = '' }} />
+      <input ref={camRef} type="file" accept="image/*,.heic,.heif,.livp" capture="environment" hidden onChange={(e) => { onFiles(e.target.files); e.target.value = '' }} />
+      <input ref={galRef} type="file" accept="image/*,.heic,.heif,.livp" multiple hidden onChange={(e) => { onFiles(e.target.files); e.target.value = '' }} />
 
       {entries.length > 1 && (
         <div className="thumbs">
