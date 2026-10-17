@@ -63,15 +63,28 @@ export default function SettingsPage() {
         await w.write(blob)
         await w.close()
         setBackupMsg(`✅ 已导出 ${items.length} 件衣服`)
-      } else {
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = name
-        a.click()
-        URL.revokeObjectURL(url)
-        setBackupMsg(`✅ 已导出 ${items.length} 件衣服（浏览器不支持选择位置，已存到默认下载目录）`)
+        return
       }
+      // ② iOS 微信/手机浏览器：系统分享面板（可选「存储到文件」或发文件传输助手）
+      const file = new File([blob], name, { type: 'application/json' })
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: '电子衣柜备份' })
+          setBackupMsg(`✅ 已导出 ${items.length} 件衣服（分享菜单里选「存储到文件」即可保存）`)
+        } catch (err) {
+          if ((err as Error).name === 'AbortError') return // 用户取消了分享
+          setBackupMsg('⚠️ 分享失败，请重试')
+        }
+        return
+      }
+      // ③ 普通下载（安卓浏览器）
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = name
+      a.click()
+      URL.revokeObjectURL(url)
+      setBackupMsg(`✅ 已导出 ${items.length} 件衣服（浏览器不支持选择位置，已存到默认下载目录）`)
     } catch {
       setBackupMsg('⚠️ 导出失败，请重试')
     } finally {
