@@ -14,21 +14,38 @@ function isHeicFile(f: File): boolean {
   return isHeicName(f.name) || f.type === 'image/heic' || f.type === 'image/heif'
 }
 
+function errText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e)
+}
+
 /** HEIC/HEIF → JPEG（heic2any 体积大，按需动态加载，不拖慢首屏） */
 async function heicToJpeg(blob: Blob): Promise<Blob> {
   const { default: heic2any } = await import('heic2any')
-  const out = await heic2any({ blob, toType: 'image/jpeg', quality: 0.92 })
+  let out: Blob | Blob[]
+  try {
+    out = await heic2any({ blob, toType: 'image/jpeg', quality: 0.92 })
+  } catch (e) {
+    throw new Error(`HEIC 解码失败（${errText(e)}）`)
+  }
   return Array.isArray(out) ? out[0] : out
 }
 
 /** .livp 实况照片：解开 zip，取最大的那张静态图（HEIC 再转 JPEG） */
 async function livpToStill(file: File): Promise<Blob> {
   const { unzipSync } = await import('fflate')
+  const buf = new Uint8Array(await file.arrayBuffer())
   let entries: Record<string, Uint8Array>
   try {
-    entries = unzipSync(new Uint8Array(await file.arrayBuffer()))
+    entries = unzipSync(buf)
   } catch {
-    throw new Error('不是有效的实况照片包')
+    // 有些导出工具产的 .livp 其实是单个文件改了后缀，按内容魔数兜底
+    const head = String.fromCharCode(...buf.subarray(0, 16))
+    if (buf[0] === 0xff && buf[1] === 0xd8) return new Blob([buf], { type: 'image/jpeg' })
+    if (head.slice(4, 8) === 'ftyp') {
+      if (/^(hei|mif1|msf1)/.test(head.slice(8, 12))) return heicToJpeg(new Blob([buf], { type: 'image/heic' }))
+      throw new Error('这个 .livp 不是照片包，而是视频文件，请改用其中的静态照片')
+    }
+    throw new Error('实况照片包解压失败（不是有效的 zip）')
   }
   const name = Object.keys(entries)
     .filter((n) => !n.endsWith('/') && /\.(hei[cf]|jpe?g|png)$/i.test(n))

@@ -91,8 +91,9 @@ export default function Today() {
     if (!f) return
     try {
       setPhoto(await normalizePhotoFile(f))
-    } catch {
-      alert('这张照片读不出来，请换一张')
+    } catch (err) {
+      console.error('[照片] 读取失败:', f.name, err)
+      alert(`这张照片读不出来（${err instanceof Error ? err.message : String(err)}），请换一张`)
     }
   }
 
