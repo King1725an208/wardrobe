@@ -5,6 +5,7 @@ import { THEMES } from '../types'
 import { DEFAULT_AI_PROXY } from '../ai'
 import { exportItemsJson, parseItemsJson } from '../backup'
 import { bulkPutItems } from '../db'
+import { cloudBackup, cloudRestore, getBackupCode, setBackupCode } from '../cloud'
 
 // File System Access API（Chromium 桌面/新版 Edge 支持）：系统「另存为」对话框，可自选保存位置
 interface SaveFileHandle {
@@ -38,6 +39,43 @@ export default function SettingsPage() {
   const [backupBusy, setBackupBusy] = useState(false)
   const [backupMsg, setBackupMsg] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
+  const [code, setCode] = useState(getBackupCode)
+  const [cloudMsg, setCloudMsg] = useState('')
+  const [cloudBusy, setCloudBusy] = useState(false)
+
+  const doCloudBackup = async () => {
+    if (!items.length && !window.confirm('本机衣柜是空的，云备份会把云端这个取件码下的衣服全部清空，确定继续？')) return
+    setCloudBusy(true)
+    try {
+      const c = setBackupCode(code)
+      setCode(c)
+      const r = await cloudBackup(items, settings, c, (d, t, label) => setCloudMsg(`${label} ${d}/${t}`))
+      setCloudMsg(`✅ 云备份完成：上传 ${r.uploaded} 件，未改动跳过 ${r.skipped} 件${r.removed ? `，云端删除 ${r.removed} 件` : ''}。取件码：${c}`)
+    } catch (err) {
+      setCloudMsg(`⚠️ ${err instanceof Error ? err.message : '云备份失败'}`)
+    } finally {
+      setCloudBusy(false)
+    }
+  }
+
+  const doCloudRestore = async () => {
+    if (!window.confirm(`用取件码「${code.trim().toUpperCase()}」从云端恢复？同 id 的衣服会被云端版本覆盖。`)) return
+    setCloudBusy(true)
+    try {
+      const c = setBackupCode(code)
+      setCode(c)
+      const list = await cloudRestore(settings, c, (d, t, label) => setCloudMsg(`${label} ${d}/${t}`))
+      const existing = new Set(items.map((i) => i.id))
+      const added = list.filter((i) => !existing.has(i.id)).length
+      await bulkPutItems(list)
+      await load()
+      setCloudMsg(`✅ 云恢复完成：共 ${list.length} 件（新增 ${added} · 覆盖更新 ${list.length - added}）`)
+    } catch (err) {
+      setCloudMsg(`⚠️ ${err instanceof Error ? err.message : '云恢复失败'}`)
+    } finally {
+      setCloudBusy(false)
+    }
+  }
 
   const doExport = async () => {
     const name = `电子衣柜备份-${new Date().toISOString().slice(0, 10)}.json`
@@ -151,14 +189,15 @@ export default function SettingsPage() {
       <p className="muted">点一下立即生效</p>
 
       <h2>AI 识别（豆包视觉）</h2>
-      <label>API Key（火山引擎 Ark）</label>
+      <label>口令 / API Key</label>
       <input
         type="password"
         value={key}
         onChange={(e) => setKey(e.target.value)}
-        placeholder="留空则关闭 AI 预填"
+        placeholder="留空则关闭 AI 预填和云备份"
       />
-      {key === KEY_MASK && <p className="muted">已保存（脱敏显示），输入新 Key 可替换；清空后保存即删除</p>}
+      {key === KEY_MASK && <p className="muted">已保存（脱敏显示），输入新口令可替换；清空后保存即删除</p>}
+      <p className="muted">走内置火山网关时填函数里设的口令（APP_TOKEN），AI 和云备份共用；自建直连中转时填方舟 API Key。</p>
       <label>模型</label>
       <input value={model} onChange={(e) => setModel(e.target.value)} />
       <label className="row">
@@ -191,6 +230,27 @@ export default function SettingsPage() {
       <button className="primary" onClick={save}>保存设置</button>
 
       <h2>数据备份</h2>
+      <label>取件码（换手机时在新手机输入这个码即可恢复）</label>
+      <input
+        value={code}
+        onChange={(e) => setCode(e.target.value.toUpperCase())}
+        placeholder="4～32 位字母数字"
+        autoCapitalize="characters"
+        style={{ letterSpacing: 2, fontWeight: 600 }}
+      />
+      <div className="row">
+        <button className="photo-btn" style={{ aspectRatio: 'auto', padding: 12, flex: 1 }} onClick={doCloudBackup} disabled={cloudBusy}>
+          ☁️ 云备份
+        </button>
+        <button className="photo-btn" style={{ aspectRatio: 'auto', padding: 12, flex: 1 }} onClick={doCloudRestore} disabled={cloudBusy}>
+          ☁️ 云恢复
+        </button>
+      </div>
+      {cloudMsg && <p className={cloudMsg.startsWith('⚠️') ? 'muted' : 'ok'}>{cloudMsg}</p>}
+      <p className="muted">
+        云备份把每件衣服（含照片）存到你自己火山账号的 TOS 里，微信/手机浏览器都能用，不用下载文件；重复备份只传改动过的，本地删掉的云端也会删。恢复时同 id 覆盖、不同 id 新增。需要口令。
+      </p>
+      <label>本地文件（电脑用）</label>
       <div className="row">
         <button className="photo-btn" style={{ aspectRatio: 'auto', padding: 12, flex: 1 }} onClick={doExport} disabled={backupBusy}>
           导出 JSON

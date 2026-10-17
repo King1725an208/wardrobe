@@ -106,7 +106,7 @@ export async function identifyClothing(photo: Blob, s: Settings): Promise<AiGues
     } catch {
       /* ignore */
     }
-    if (resp.status === 401) throw new Error('API Key 无效或没权限' + (detail ? `：${detail}` : ''))
+    if (resp.status === 401) throw new Error(detail || '口令 / API Key 不对，请检查设置页')
     throw new Error(`AI 接口返回 ${resp.status}` + (detail ? `：${detail}` : ''))
   }
   const data = await resp.json()
