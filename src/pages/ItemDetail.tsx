@@ -35,8 +35,9 @@ function EditItem({ item, onDone }: { item: WardrobeItem; onDone: () => void }) 
     let blob: Blob
     try {
       blob = await normalizePhotoFile(f)
-    } catch {
-      alert('这张照片读不出来，请换一张（.livp / .heic 已支持自动转换）')
+    } catch (err) {
+      console.error('[照片] 读取失败:', f.name, err)
+      alert(`这张照片读不出来（${err instanceof Error ? err.message : String(err)}），请换一张`)
       return
     }
     setPhoto(blob)

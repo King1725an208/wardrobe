@@ -120,8 +120,9 @@ export default function AddItem({ onDone }: { onDone: () => void }) {
     for (const f of Array.from(files)) {
       try {
         photos.push(await normalizePhotoFile(f))
-      } catch {
-        bad.push(f.name)
+      } catch (err) {
+        console.error('[照片] 读取失败:', f.name, err)
+        bad.push(`${f.name}（${err instanceof Error ? err.message : String(err)}）`)
       }
     }
     if (bad.length) alert(`有 ${bad.length} 张照片读不出来，已跳过：${bad.join('、')}`)
