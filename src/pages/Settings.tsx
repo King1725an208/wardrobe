@@ -44,6 +44,7 @@ export default function SettingsPage() {
   const [cloudBusy, setCloudBusy] = useState(false)
 
   const doCloudBackup = async () => {
+    if (!items.length && !window.confirm('本机衣柜是空的，云备份会把云端这个取件码下的衣服全部清空，确定继续？')) return
     setCloudBusy(true)
     try {
       const c = setBackupCode(code)
@@ -238,7 +239,7 @@ export default function SettingsPage() {
         style={{ letterSpacing: 2, fontWeight: 600 }}
       />
       <div className="row">
-        <button className="photo-btn" style={{ aspectRatio: 'auto', padding: 12, flex: 1 }} onClick={doCloudBackup} disabled={cloudBusy || !items.length}>
+        <button className="photo-btn" style={{ aspectRatio: 'auto', padding: 12, flex: 1 }} onClick={doCloudBackup} disabled={cloudBusy}>
           ☁️ 云备份
         </button>
         <button className="photo-btn" style={{ aspectRatio: 'auto', padding: 12, flex: 1 }} onClick={doCloudRestore} disabled={cloudBusy}>

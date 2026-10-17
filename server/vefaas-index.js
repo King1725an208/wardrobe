@@ -4,6 +4,7 @@
 // 3) 口令：环境变量 APP_TOKEN 设置后，所有接口都要带 Authorization: Bearer <口令>（App 设置页「口令 / API Key」）
 const http = require('http');
 const https = require('https');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
@@ -37,9 +38,15 @@ function readBody(req) {
   });
 }
 
+// TOS 挂载检测：挂载目录和根目录不在同一设备上才算真的挂上了，
+// 防止挂载失败时把备份写进函数实例的本地磁盘（实例重建即丢失）。
+// 本地调试可设 BACKUP_SKIP_MOUNT_CHECK=1 跳过。
 function backupMounted() {
   try {
-    return fs.existsSync(path.dirname(BACKUP_DIR));
+    const mountDir = path.dirname(BACKUP_DIR);
+    if (!fs.existsSync(mountDir)) return false;
+    if (process.env.BACKUP_SKIP_MOUNT_CHECK === '1') return true;
+    return fs.statSync(mountDir).dev !== fs.statSync('/').dev;
   } catch {
     return false;
   }
@@ -86,7 +93,7 @@ async function handleBackup(req, res, parts) {
     }
     fs.mkdirSync(dir, { recursive: true });
     const finalName = `${itemId}__${hash}.json`;
-    const tmp = path.join(dir, `.${finalName}.tmp`);
+    const tmp = path.join(dir, `.${finalName}.${process.pid}-${crypto.randomBytes(6).toString('hex')}.tmp`);
     fs.writeFileSync(tmp, body);
     fs.renameSync(tmp, path.join(dir, finalName));
     // 删掉同一件衣服的旧版本
@@ -176,13 +183,14 @@ const server = http.createServer(async (req, res) => {
 
   // 口令校验：设置了 APP_TOKEN 时，其余接口必须带 Bearer <口令>
   if (APP_TOKEN) {
-    const auth = req.headers['authorization'] || '';
-    const got = auth.replace(/^Bearer\s+/i, '').trim();
-    if (got !== APP_TOKEN) return json(res, 401, { error: { message: '口令不对，请在 App「设置 → 口令 / API Key」里填写正确口令' } });
+    const m = /^Bearer\s+(.+)$/i.exec(req.headers['authorization'] || '');
+    if (!m || m[1].trim() !== APP_TOKEN) return json(res, 401, { error: { message: '口令不对，请在 App「设置 → 口令 / API Key」里填写正确口令' } });
   }
 
-  // 云备份
+  // 云备份（必须配置了口令才开放，否则任何人都能读写备份）
   if (pathname.startsWith('/api/backup')) {
+    if (!APP_TOKEN) return json(res, 503, { error: { message: '函数未配置 APP_TOKEN 口令，云备份已关闭' } });
+    if (!backupMounted()) return json(res, 503, { error: { message: 'TOS 未挂载，云备份不可用（检查函数「存储」配置）' } });
     const parts = pathname.split('/').filter(Boolean).slice(2); // 去掉 api, backup
     try {
       return await handleBackup(req, res, parts);
