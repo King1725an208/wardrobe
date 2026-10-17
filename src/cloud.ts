@@ -74,7 +74,7 @@ async function pool<T>(list: T[], n: number, fn: (x: T) => Promise<void>): Promi
   await Promise.all(workers)
 }
 
-/** 一键云备份：逐件上传（已存在且未改动的跳过），本地已删的云端也删 */
+/** 一键云备份：逐件「转文本 → 算 hash → 上传 → 释放」，内存只占一件衣服（iPhone Safari 内存很紧，不能先把全部照片转好再传） */
 export async function cloudBackup(
   items: WardrobeItem[],
   s: Settings,
@@ -85,42 +85,45 @@ export async function cloudBackup(
   const remote = (await (await call(s, base)).json()) as { items: { id: string; hash: string }[] }
   const remoteHash = new Map(remote.items.map((r) => [r.id, r.hash]))
 
-  onProgress(0, items.length, '正在整理照片…')
-  const payloads: { id: string; hash: string; body: string }[] = []
-  for (const it of items) {
-    const body = JSON.stringify(await itemToJson(it))
-    payloads.push({ id: it.id, hash: await sha16(body), body })
-  }
-  const todo = payloads.filter((p) => remoteHash.get(p.id) !== p.hash)
   let done = 0
-  onProgress(0, todo.length, '正在上传…')
-  await pool(todo, 3, async (p) => {
-    await call(s, `${base}/items/${p.id}__${p.hash}`, { method: 'PUT', body: p.body })
+  let uploaded = 0
+  onProgress(0, items.length, '正在备份…')
+  await pool(items, 2, async (it) => {
+    const body = JSON.stringify(await itemToJson(it))
+    const hash = await sha16(body)
+    if (remoteHash.get(it.id) !== hash) {
+      await call(s, `${base}/items/${it.id}__${hash}`, { method: 'PUT', body })
+      uploaded++
+    }
     done++
-    onProgress(done, todo.length, '正在上传…')
+    onProgress(done, items.length, '正在备份…')
   })
 
   const localIds = new Set(items.map((i) => i.id))
   const stale = remote.items.filter((r) => !localIds.has(r.id))
-  await pool(stale, 3, async (r) => {
+  await pool(stale, 2, async (r) => {
     await call(s, `${base}/items/${r.id}`, { method: 'DELETE' })
   })
-  return { uploaded: todo.length, skipped: payloads.length - todo.length, removed: stale.length }
+  return { uploaded, skipped: items.length - uploaded, removed: stale.length }
 }
 
-/** 云恢复：按取件码拉回全部衣服（同 id 覆盖本地） */
-export async function cloudRestore(s: Settings, code: string, onProgress: Progress): Promise<WardrobeItem[]> {
+/** 云恢复：按取件码逐件拉回，每件到手立刻交给 onItem 写库（不在内存里攒），返回件数 */
+export async function cloudRestore(
+  s: Settings,
+  code: string,
+  onItem: (item: WardrobeItem) => Promise<void>,
+  onProgress: Progress,
+): Promise<number> {
   const base = `${cloudBase(s)}/${code}`
   const remote = (await (await call(s, base)).json()) as { items: { id: string; hash: string }[] }
   if (!remote.items.length) throw new Error('这个取件码下还没有备份')
-  const out: WardrobeItem[] = []
   let done = 0
-  onProgress(0, remote.items.length, '正在下载…')
-  await pool(remote.items, 3, async (r) => {
+  onProgress(0, remote.items.length, '正在恢复…')
+  await pool(remote.items, 2, async (r) => {
     const raw = await (await call(s, `${base}/items/${r.id}__${r.hash}`)).json()
-    out.push(await jsonToItem(raw))
+    await onItem(await jsonToItem(raw))
     done++
-    onProgress(done, remote.items.length, '正在下载…')
+    onProgress(done, remote.items.length, '正在恢复…')
   })
-  return out
+  return remote.items.length
 }
