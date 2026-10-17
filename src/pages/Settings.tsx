@@ -64,12 +64,19 @@ export default function SettingsPage() {
     try {
       const c = setBackupCode(code)
       setCode(c)
-      const list = await cloudRestore(settings, c, (d, t, label) => setCloudMsg(`${label} ${d}/${t}`))
       const existing = new Set(items.map((i) => i.id))
-      const added = list.filter((i) => !existing.has(i.id)).length
-      await bulkPutItems(list)
+      let added = 0
+      const total = await cloudRestore(
+        settings,
+        c,
+        async (it) => {
+          if (!existing.has(it.id)) added++
+          await bulkPutItems([it])
+        },
+        (d, t, label) => setCloudMsg(`${label} ${d}/${t}`),
+      )
       await load()
-      setCloudMsg(`✅ 云恢复完成：共 ${list.length} 件（新增 ${added} · 覆盖更新 ${list.length - added}）`)
+      setCloudMsg(`✅ 云恢复完成：共 ${total} 件（新增 ${added} · 覆盖更新 ${total - added}）`)
     } catch (err) {
       setCloudMsg(`⚠️ ${err instanceof Error ? err.message : '云恢复失败'}`)
     } finally {
