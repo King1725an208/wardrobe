@@ -7,6 +7,7 @@ import { WEAR_LEVELS, type WardrobeItem, type WearLevel } from '../types'
 import { useBlobUrl } from '../useBlobUrl'
 import ItemForm from '../components/ItemForm'
 import { draftFromItem, draftToFields, type Draft } from '../draft'
+import { normalizePhotoFile } from '../photoFile'
 
 function EditItem({ item, onDone }: { item: WardrobeItem; onDone: () => void }) {
   const { outfits, settings, update, remove } = useStore()
@@ -28,9 +29,17 @@ function EditItem({ item, onDone }: { item: WardrobeItem; onDone: () => void }) 
   const effective = manualLv ?? auto
   const history = outfits.filter((o) => o.itemIds.includes(item.id))
 
-  const onNewPhoto = (f: File | undefined) => {
+  const onNewPhoto = async (f: File | undefined) => {
     if (!f) return
-    setPhoto(f)
+    // iPhone 导出的 .livp/.heic 先归一化成 JPEG，否则预览不了、AI 也会 400
+    let blob: Blob
+    try {
+      blob = await normalizePhotoFile(f)
+    } catch {
+      alert('这张照片读不出来，请换一张（.livp / .heic 已支持自动转换）')
+      return
+    }
+    setPhoto(blob)
     setOriginal(undefined)
     setBg('idle')
     setBgError('')
@@ -42,15 +51,15 @@ function EditItem({ item, onDone }: { item: WardrobeItem; onDone: () => void }) 
     }
     setBg('loading')
     // 已是白底/透明底就保留原图；否则走 Seedream，失败用原图
-    hasPlainBackground(f)
+    hasPlainBackground(blob)
       .then(async (plain) => {
         if (plain) {
           setBg('idle')
           return
         }
-        const b = await removeBackground(f, settings)
+        const b = await removeBackground(blob, settings)
         setPhoto(b)
-        setOriginal(f)
+        setOriginal(blob)
         setBg('idle')
       })
       .catch((e) => {
@@ -102,8 +111,8 @@ function EditItem({ item, onDone }: { item: WardrobeItem; onDone: () => void }) 
     <div className="page">
       <button className="back" onClick={onDone}>← 返回</button>
       <h1>编辑衣服</h1>
-      <input ref={camRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => onNewPhoto(e.target.files?.[0])} />
-      <input ref={galRef} type="file" accept="image/*" hidden onChange={(e) => onNewPhoto(e.target.files?.[0])} />
+      <input ref={camRef} type="file" accept="image/*,.heic,.heif,.livp" capture="environment" hidden onChange={(e) => onNewPhoto(e.target.files?.[0])} />
+      <input ref={galRef} type="file" accept="image/*,.heic,.heif,.livp" hidden onChange={(e) => onNewPhoto(e.target.files?.[0])} />
       {url && <img className="preview" src={url} alt="" />}
       {bg === 'loading' && <p className="muted">去背景中…</p>}
       {bg === 'failed' && <p className="muted">去背景失败，使用原图{bgError ? `（${bgError}）` : ''}</p>}

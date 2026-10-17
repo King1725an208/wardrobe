@@ -3,6 +3,7 @@ import { useStore } from '../store'
 import { markWorn } from '../db'
 import { CATEGORIES } from '../types'
 import { useBlobUrl } from '../useBlobUrl'
+import { normalizePhotoFile } from '../photoFile'
 import type { Category, OutfitRecord, WardrobeItem } from '../types'
 
 function today() {
@@ -85,6 +86,16 @@ export default function Today() {
   const toggle = (id: string) =>
     setPicked(picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id])
 
+  // iPhone 导出的 .livp/.heic 先归一化成 JPEG，否则预览不了
+  const pick = async (f: File | undefined) => {
+    if (!f) return
+    try {
+      setPhoto(await normalizePhotoFile(f))
+    } catch {
+      alert('这张照片读不出来，请换一张')
+    }
+  }
+
   const save = async () => {
     const rec: OutfitRecord = {
       id: existing?.id ?? crypto.randomUUID(),
@@ -103,8 +114,8 @@ export default function Today() {
   return (
     <div className="page">
       <h1>今日穿搭 <span className="muted">{today()}</span></h1>
-      <input ref={camRef} type="file" accept="image/*" capture="user" hidden onChange={(e) => setPhoto(e.target.files?.[0])} />
-      <input ref={galRef} type="file" accept="image/*" hidden onChange={(e) => setPhoto(e.target.files?.[0])} />
+      <input ref={camRef} type="file" accept="image/*,.heic,.heif,.livp" capture="user" hidden onChange={(e) => pick(e.target.files?.[0])} />
+      <input ref={galRef} type="file" accept="image/*,.heic,.heif,.livp" hidden onChange={(e) => pick(e.target.files?.[0])} />
       {url && <img className="preview" src={url} alt="" />}
       <div className="photo-row">
         <button className="photo-btn" onClick={() => camRef.current?.click()}>🤳 拍今日穿搭</button>
