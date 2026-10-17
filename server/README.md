@@ -11,6 +11,9 @@
 - `ARK_API_KEY`：方舟 Key（函数用它调方舟，手机端不需要真 Key）
 - `APP_TOKEN`：访问口令；设置后所有接口要带 `Authorization: Bearer <口令>`，App「设置 → 口令 / API Key」填它
 - `BACKUP_DIR`（可选）：备份目录，默认 `/mnt/tos/backup`
+- `BACKUP_SKIP_MOUNT_CHECK=1`（仅本地调试）：跳过「挂载目录必须是独立设备」的 TOS 挂载检测
+
+备份接口只有在 `APP_TOKEN` 已设置且 TOS 确实挂载时才开放，否则返回 503。同一口令可访问任意取件码，所以口令只给自家人用。
 
 云备份需在函数配置 → 存储 → 开启 TOS 挂载：桶挂到本地目录 `/mnt/tos`，读写权限（需填有 TOS 权限的 AK/SK）。
 文件按 `backup/<取件码>/items/<衣服id>__<hash>.json` 存放。接口：
