@@ -6,6 +6,15 @@ import { DEFAULT_AI_PROXY } from '../ai'
 import { exportItemsJson, parseItemsJson } from '../backup'
 import { bulkPutItems } from '../db'
 
+// File System Access API（Chromium 桌面/新版 Edge 支持）：系统「另存为」对话框，可自选保存位置
+interface SaveFileHandle {
+  createWritable: () => Promise<{ write: (d: Blob) => Promise<void>; close: () => Promise<void> }>
+}
+type SaveFilePicker = (opts: {
+  suggestedName?: string
+  types?: { description?: string; accept: Record<string, string[]> }[]
+}) => Promise<SaveFileHandle>
+
 /** 已保存的 API Key 在输入框里以此占位显示（脱敏）；保存时若未被改动则保留原值 */
 const KEY_MASK = 'XXXXXXXXXXXXX'
 
@@ -31,16 +40,38 @@ export default function SettingsPage() {
   const fileRef = useRef<HTMLInputElement>(null)
 
   const doExport = async () => {
+    const name = `电子衣柜备份-${new Date().toISOString().slice(0, 10)}.json`
+    // 先弹「另存为」对话框（趁点击手势还有效），选好位置再生成数据；不支持时退回普通下载
+    let handle: SaveFileHandle | undefined
+    const picker = (window as Window & { showSaveFilePicker?: SaveFilePicker }).showSaveFilePicker
+    if (picker) {
+      try {
+        handle = await picker.call(window, {
+          suggestedName: name,
+          types: [{ description: 'JSON 备份', accept: { 'application/json': ['.json'] } }],
+        })
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') return // 用户在对话框里点了取消
+        // 其他异常（受限环境等）：退回普通下载
+      }
+    }
     setBackupBusy(true)
     try {
-      const json = await exportItemsJson(items)
-      const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `电子衣柜备份-${new Date().toISOString().slice(0, 10)}.json`
-      a.click()
-      URL.revokeObjectURL(url)
-      setBackupMsg(`✅ 已导出 ${items.length} 件衣服`)
+      const blob = new Blob([await exportItemsJson(items)], { type: 'application/json' })
+      if (handle) {
+        const w = await handle.createWritable()
+        await w.write(blob)
+        await w.close()
+        setBackupMsg(`✅ 已导出 ${items.length} 件衣服`)
+      } else {
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = name
+        a.click()
+        URL.revokeObjectURL(url)
+        setBackupMsg(`✅ 已导出 ${items.length} 件衣服（浏览器不支持选择位置，已存到默认下载目录）`)
+      }
     } catch {
       setBackupMsg('⚠️ 导出失败，请重试')
     } finally {
