@@ -15,19 +15,88 @@ function isHeicFile(f: File): boolean {
 }
 
 function errText(e: unknown): string {
-  return e instanceof Error ? e.message : String(e)
+  if (e instanceof Error) return e.message
+  // libheif 等 WASM 库抛的是普通对象（{code, message}），String() 只会得到 [object Object]
+  if (e && typeof e === 'object') {
+    const o = e as Record<string, unknown>
+    if (typeof o.message === 'string') return o.code != null ? `${o.message}（code ${o.code}）` : o.message
+    try {
+      return JSON.stringify(e)
+    } catch {
+      /* 循环引用则落到 String */
+    }
+  }
+  return String(e)
 }
 
-/** HEIC/HEIF → JPEG（heic2any 体积大，按需动态加载，不拖慢首屏） */
+/**
+ * HEIC/HEIF → JPEG：libheif 官方 WASM（libheif-js，1.23.x），按需动态加载不拖慢首屏。
+ * heic2any 内置的 libheif 1.10 太老，解不了小米等机型计算摄影的多图 HEIC
+ * （报 ERR_LIBHEIF format not supported）。
+ * 这类 HEIC 常含多张图（20MP+ 主图 + 若干衍生图）：衣柜预览和 AI 识别用不上超大图，
+ * 优先选长边 ≤3200px 的最大那张，少解几倍像素，快很多。
+ */
+type LibHeif = import('libheif-js/libheif-wasm/libheif-bundle.mjs').LibHeifModule
+let libheifP: Promise<LibHeif> | undefined
+/** emscripten MODULARIZE 工厂：浏览器里 wasm 只能异步编译；模块全局只初始化一次 */
+function loadLibheif(): Promise<LibHeif> {
+  if (!libheifP) {
+    libheifP = import('libheif-js/libheif-wasm/libheif-bundle.mjs').then(async (m) => m.default())
+  }
+  return libheifP
+}
+
 async function heicToJpeg(blob: Blob): Promise<Blob> {
-  const { default: heic2any } = await import('heic2any')
-  let out: Blob | Blob[]
+  console.log('[照片] 加载 libheif wasm...')
+  const libheif = await loadLibheif()
+  console.log('[照片] libheif 就绪，读文件...')
+  const data = new Uint8Array(await blob.arrayBuffer())
+  let images
   try {
-    out = await heic2any({ blob, toType: 'image/jpeg', quality: 0.92 })
+    images = new libheif.HeifDecoder().decode(data)
   } catch (e) {
     throw new Error(`HEIC 解码失败（${errText(e)}）`)
   }
-  return Array.isArray(out) ? out[0] : out
+  console.log('[照片] 容器解析完，', images.length, '张图')
+  const bySize = [...images].sort((a, b) => b.get_width() * b.get_height() - a.get_width() * a.get_height())
+  const img = bySize.find((i) => Math.max(i.get_width(), i.get_height()) <= 3200) ?? bySize[0]
+  if (!img) throw new Error('HEIC 解码失败（文件里没有图像）')
+  const w = img.get_width()
+  const h = img.get_height()
+  console.log(`[照片] HEIC 含 ${images.length} 张图，解码 ${w}x${h}`)
+  const imageData = new ImageData(w, h)
+  console.log('[照片] 开始解码像素...')
+  try {
+    await new Promise<void>((resolve, reject) => {
+      img.display(imageData, (out) => (out ? resolve() : reject(new Error('像素解包失败'))))
+    })
+  } catch (e) {
+    throw new Error(`HEIC 解码失败（${errText(e)}）`)
+  }
+  // 解出来可能是 20MP+ 的巨图（小米计算摄影），衣柜卡片和 AI 识别都用不上：
+  // 不降采样的话，巨图 canvas 的 putImageData/toBlob 在低端设备上会卡死甚至 OOM。
+  // createImageBitmap 带 resize 一步完成缩放，不用先画巨图画布。
+  const scale = Math.min(1, 2048 / Math.max(w, h))
+  const tw = Math.max(1, Math.round(w * scale))
+  const th = Math.max(1, Math.round(h * scale))
+  const canvas = document.createElement('canvas')
+  canvas.width = tw
+  canvas.height = th
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('HEIC 解码失败（canvas 不可用）')
+  if (scale >= 1) {
+    ctx.putImageData(imageData, 0, 0)
+  } else {
+    console.log(`[照片] 降采样 ${w}x${h} -> ${tw}x${th}`)
+    const bmp = await createImageBitmap(imageData, { resizeWidth: tw, resizeHeight: th, resizeQuality: 'high' })
+    ctx.drawImage(bmp, 0, 0)
+    bmp.close()
+  }
+  console.log('[照片] 转 JPEG...')
+  const jpeg = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.92))
+  if (!jpeg) throw new Error('HEIC 解码失败（JPEG 编码失败）')
+  console.log(`[照片] 完成，JPEG ${(jpeg.size / 1024).toFixed(0)}KB`)
+  return jpeg
 }
 
 /** .livp 实况照片：解开 zip，取最大的那张静态图（HEIC 再转 JPEG） */
