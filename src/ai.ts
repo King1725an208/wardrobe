@@ -45,6 +45,36 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   })
 }
 
+/**
+ * 识别专用小图：长边压到 1024、JPEG 0.85。
+ * 实测（tools/bench）：豆包视觉把任意输入归一化成固定 token，分辨率不影响延迟和准确率；
+ * 但手机直传 5~12MB 原图 base64 上传要好几秒，压完省掉这段；1024px + detail:'low' 还能把
+ * 图像 token 从 ~1700 降到 ~905（省一半费用）。失败就用原图，不阻塞识别。
+ */
+async function downscaleForAi(blob: Blob): Promise<Blob> {
+  try {
+    const src = await createImageBitmap(blob)
+    const scale = Math.min(1, 1024 / Math.max(src.width, src.height))
+    if (scale >= 1) {
+      src.close()
+      return blob
+    }
+    const w = Math.max(1, Math.round(src.width * scale))
+    const h = Math.max(1, Math.round(src.height * scale))
+    const bmp = await createImageBitmap(src, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' })
+    src.close()
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    canvas.getContext('2d')!.drawImage(bmp, 0, 0)
+    bmp.close()
+    const jpeg = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.85))
+    return jpeg ?? blob
+  } catch {
+    return blob
+  }
+}
+
 /** 浏览器直连方舟会被 CORS 拦截，所以经中转转发（中转不保存 key）。
  *  默认内置火山引擎 API 网关自建的透传中转——国内手机/电脑可直连，开箱即用。 */
 export const DEFAULT_AI_PROXY =
@@ -70,7 +100,7 @@ export async function identifyClothing(photo: Blob, s: Settings): Promise<AiGues
   if (!s.doubaoApiKey) return null
   const model = s.doubaoModel || DEFAULT_MODEL
   const base = proxyBase(s)
-  const image = await blobToDataUrl(photo)
+  const image = await blobToDataUrl(await downscaleForAi(photo))
   let resp: Response
   try {
     resp = await fetch(arkUrl(base, '/chat/completions'), {
@@ -81,6 +111,9 @@ export async function identifyClothing(photo: Blob, s: Settings): Promise<AiGues
       },
       body: JSON.stringify({
         model,
+        // 实测（tools/bench）：关深度思考 25~50s→1~3s（模型不再生成数百个隐藏推理 token），
+        // 识别结果与思考模式逐字段一致；detail:'low' 配合 1024px 小图，图像 token 减半
+        thinking: { type: 'disabled' },
         messages: [
           {
             role: 'user',
@@ -89,7 +122,7 @@ export async function identifyClothing(photo: Blob, s: Settings): Promise<AiGues
                 type: 'text',
                 text: IDENTIFY_PROMPT,
               },
-              { type: 'image_url', image_url: { url: image } },
+              { type: 'image_url', image_url: { url: image, detail: 'low' } },
             ],
           },
         ],
