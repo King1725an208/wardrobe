@@ -3,6 +3,7 @@ import { useStore } from '../store'
 import { wearLevel } from '../frequency'
 import { removeBackground } from '../ai'
 import { findDuplicates } from '../dup'
+import { createPool } from '../pool'
 import {
   CATEGORIES, MATERIALS, SEASONS, STANDARD_COLORS, STYLE_TAGS, WEAR_LEVELS,
   type Category, type WearLevel,
@@ -15,6 +16,7 @@ type TagKey = 'category' | 'season' | 'color' | 'style' | 'material' | 'wear'
 function Card({ item, onOpen }: { item: WardrobeItem; onOpen: (id: string) => void }) {
   const url = useBlobUrl(item.photo)
   const { settings, update } = useStore()
+  const bgPending = useStore((s) => s.bgPending.includes(item.id)) // 后台补抠中：显示角标，好了自动换白底图
   const [open, setOpen] = useState<TagKey | null>(null)
   const lv = wearLevel(item, settings)
   const lvLabel = lv ? WEAR_LEVELS.find((w) => w.key === lv)!.label : '没定义'
@@ -39,6 +41,7 @@ function Card({ item, onOpen }: { item: WardrobeItem; onOpen: (id: string) => vo
     <div className="card">
       <button className="card-img" onClick={() => onOpen(item.id)}>
         {url ? <img src={url} alt="" /> : <div className="ph" />}
+        {bgPending && <span className="bg-pending">抠图中…</span>}
       </button>
       <div className="card-info">
         <div className="card-title" onClick={() => onOpen(item.id)}>
@@ -161,7 +164,7 @@ export default function Wardrobe({ onOpen }: { onOpen: (id: string) => void }) {
     })
   }, [items, cat, season, style, lv, q, sort, settings, rawOnly, dupIds])
 
-  // 批量去背景：一张张顺序调 Seedream，成功后主图换成白底图、原图存进 originalPhoto
+  // 批量去背景：并发池(2) 调 Seedream（P2-3，比串行快一倍），成功后主图换成白底图、原图存进 originalPhoto
   const batchRemoveBg = async () => {
     if (!settings.doubaoApiKey) {
       alert('请先在「设置」页配置 API Key')
@@ -171,18 +174,25 @@ export default function Wardrobe({ onOpen }: { onOpen: (id: string) => void }) {
     if (!targets.length) return
     setBgMsg('')
     setBgProg({ done: 0, total: targets.length })
+    const pool = createPool(2)
+    let done = 0
     let failed = 0
     let errMsg = ''
-    for (const [idx, it] of targets.entries()) {
-      try {
-        const cutout = await removeBackground(it.photo, settings)
-        await update({ ...it, photo: cutout, originalPhoto: it.photo })
-      } catch (e) {
-        failed++
-        if (!errMsg) errMsg = e instanceof Error ? e.message : String(e)
-      }
-      setBgProg({ done: idx + 1, total: targets.length })
-    }
+    await Promise.all(
+      targets.map((it) =>
+        pool(async () => {
+          try {
+            const cutout = await removeBackground(it.photo, settings)
+            await update({ ...it, photo: cutout, originalPhoto: it.photo })
+          } catch (e) {
+            failed++
+            if (!errMsg) errMsg = e instanceof Error ? e.message : String(e)
+          }
+          done++
+          setBgProg({ done, total: targets.length })
+        }),
+      ),
+    )
     setBgProg(null)
     setBgMsg(`去背景完成：成功 ${targets.length - failed} 件${failed ? `，失败 ${failed} 件（${errMsg}）` : ''}`)
   }
