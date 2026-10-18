@@ -178,7 +178,11 @@ export async function identifyClothing(photo: Blob, s: Settings): Promise<AiGues
 export async function removeBackground(photo: Blob, s: Settings): Promise<Blob> {
   if (!s.doubaoApiKey) throw new Error('未填写 API Key')
   const base = proxyBase(s)
-  const image = await blobToDataUrl(photo)
+  // 上传前先压到 1024px（约 100KB）：实测（tools/bench/bg-speed）生成耗时与输入尺寸无关
+  // （39~51s 全程波动内）、1024px 与 3024px 输入的出图质量肉眼无差；而 3~12MB 原图 base64
+  // 经手机上行 + 网关整包缓冲转发要多花数秒~十几秒。生图计费只按输出 token（1K=3888）
+  // 和输入张数计，压缩不省 token 也不损质量，纯省上传段。
+  const image = await blobToDataUrl(await downscaleForAi(photo))
   let resp: Response
   try {
     resp = await fetch(arkUrl(base, '/images/generations'), {
