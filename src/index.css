@@ -108,7 +108,13 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .card-sub { font-size: 0.78rem; color: var(--muted); margin: 2px 0 6px; }
 
 /* 衣柜卡片：属性 tag（点开下拉编辑） */
-.card-img { display: block; width: 100%; padding: 0; border: 0; background: var(--soft); cursor: pointer; }
+.card-img { display: block; width: 100%; padding: 0; border: 0; background: var(--soft); cursor: pointer; position: relative; }
+/* 后台补抠图进行中的卡片角标（先存后补：好了自动换白底图） */
+.bg-pending {
+  position: absolute; left: 6px; bottom: 6px; padding: 2px 8px;
+  border-radius: 999px; background: rgba(255, 255, 255, 0.92); color: var(--accent);
+  font-size: 0.72rem; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15); animation: blink 1.6s infinite;
+}
 .card-title { cursor: pointer; }
 .tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .tag {

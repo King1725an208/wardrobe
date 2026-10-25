@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { AddEntry } from '../types'
 import { identifyClothing, removeBackground } from '../ai'
 import { hasPlainBackground } from '../image'
@@ -8,6 +8,12 @@ import { useBlobUrl } from '../useBlobUrl'
 import ItemForm from '../components/ItemForm'
 import { applyGuess, draftToFields, emptyDraft } from '../draft'
 import { normalizePhotoFile } from '../photoFile'
+import { createPool } from '../pool'
+
+/** 录入页 AI 调用并发池：识别+去背景共用，最多 2 个在飞（P2-3），避免多图时瞬间打满账号限流和手机带宽 */
+const aiPool = createPool(2)
+/** 保存时抠图还在飞 → 把这次调用的结果交接给刚保存的衣物 id（不重复调用；P2-2） */
+const bgHandoff = new Map<string, string>()
 
 function Thumb({ e, on, onClick }: { e: AddEntry; on: boolean; onClick: () => void }) {
   const url = useBlobUrl(e.useCutout && e.cutout ? e.cutout : e.photo)
@@ -43,7 +49,7 @@ function DupHint({ e, onContinue, onRemove }: { e: AddEntry; onContinue: () => v
 }
 
 export default function AddItem({ onDone }: { onDone: () => void }) {
-  const { add, settings, addEntries: entries, addCur: cur, setAddCur: setCur, setAddEntries: setEntries } = useStore()
+  const { add, settings, addEntries: entries, addCur: cur, setAddCur: setCur, setAddEntries: setEntries, enqueueBg, completeBg } = useStore()
   const camRef = useRef<HTMLInputElement>(null)
   const galRef = useRef<HTMLInputElement>(null)
   const [saving, setSaving] = useState(false)
@@ -53,11 +59,9 @@ export default function AddItem({ onDone }: { onDone: () => void }) {
   const patch = (key: string, p: Partial<AddEntry> | ((e: AddEntry) => Partial<AddEntry>)) =>
     setEntries((list: AddEntry[]) => list.map((e) => (e.key === key ? { ...e, ...(typeof p === 'function' ? p(e) : p) } : e)))
 
-  const process = (e: AddEntry) => {
-    if (!settings.doubaoApiKey) return
-    if (settings.removeBg !== false) runBg(e)
+  const runIdentify = (e: AddEntry) => {
     patch(e.key, { ai: 'loading' })
-    identifyClothing(e.photo, settings)
+    void aiPool(() => identifyClothing(e.photo, settings))
       .then((g) => {
         if (!g) return patch(e.key, { ai: 'failed' })
         patch(e.key, (old: AddEntry) => ({ ai: 'done', draft: applyGuess(old.draft, g) }))
@@ -65,18 +69,53 @@ export default function AddItem({ onDone }: { onDone: () => void }) {
       .catch((err) => patch(e.key, { ai: 'failed', aiError: err instanceof Error ? err.message : String(err) }))
   }
 
+  const process = (e: AddEntry) => {
+    if (!settings.doubaoApiKey) return
+    if (settings.removeBg !== false) runBg(e)
+    runIdentify(e)
+  }
+
   // 已是白底/透明底（电商图、已抠图）直接跳过；否则走 Seedream，失败用原图
   const runBg = (e: AddEntry) => {
     if (!settings.doubaoApiKey) return
     patch(e.key, { bg: 'loading', bgError: '' })
-    hasPlainBackground(e.photo)
-      .then((plain) => {
-        // cutout 留空 = 跳过处理，保存时用原图
-        if (plain) return patch(e.key, { bg: 'done' })
-        return removeBackground(e.photo, settings).then((b) => patch(e.key, { cutout: b, bg: 'done' }))
+    void aiPool(async () => {
+      const plain = await hasPlainBackground(e.photo)
+      return plain ? null : removeBackground(e.photo, settings)
+    })
+      .then((b) => {
+        // cutout 留空 = 跳过处理（已是白底），保存时用原图
+        patch(e.key, b ? { cutout: b, bg: 'done' } : { bg: 'done' })
+        const itemId = bgHandoff.get(e.key)
+        if (itemId) {
+          bgHandoff.delete(e.key)
+          if (b) void completeBg(itemId, b) // 保存后抠图才回来：直接换到已入库的衣物上
+        }
       })
-      .catch((err) => patch(e.key, { bg: 'failed', bgError: err instanceof Error ? err.message : String(err) }))
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err)
+        patch(e.key, { bg: 'failed', bgError: msg })
+        const itemId = bgHandoff.get(e.key)
+        if (itemId) {
+          bgHandoff.delete(e.key)
+          void enqueueBg(itemId, e.photo) // 在飞失败且已保存：落后台任务重试
+        }
+      })
   }
+
+  // 断点续跑（P2-1）：上一批次被杀/刷新后从 IDB 恢复（store.load 把中断的 loading 重置回 idle），补跑缺的部分
+  const resumed = useRef(false)
+  useEffect(() => {
+    if (resumed.current) return
+    resumed.current = true
+    if (!settings.doubaoApiKey) return
+    for (const e of entries) {
+      if (e.dupOf) continue // 查重暂停的仍等人确认
+      if (e.ai === 'idle') runIdentify(e)
+      if (e.bg === 'idle' && settings.removeBg !== false) runBg(e)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Seedream 精修（约 1 分钟）
   const refine = (e: AddEntry) => {
@@ -161,11 +200,15 @@ export default function AddItem({ onDone }: { onDone: () => void }) {
     try {
       for (const e of entries) {
         const final = e.useCutout && e.cutout ? e.cutout : e.photo
-        await add({
+        const item = await add({
           photo: final,
           originalPhoto: final !== e.photo ? e.photo : undefined,
           ...draftToFields(e.draft),
         })
+        // 先存后补（P2-2）：抠图还在飞 → 结果交接给刚保存的这件（不重复调用）；
+        // 抠图已失败 → 落后台任务慢慢重试，好了自动换白底图
+        if (e.bg === 'loading') bgHandoff.set(e.key, item.id)
+        else if (e.bg === 'failed') void enqueueBg(item.id, e.photo)
       }
       setEntries([])
       setCur(0)
@@ -232,7 +275,7 @@ export default function AddItem({ onDone }: { onDone: () => void }) {
 
       {entry && <ItemForm value={entry.draft} onChange={(d) => patch(entry.key, { draft: d })} />}
 
-      {busyCount > 0 && <p className="muted">可以切去别的页面，回来进度还在</p>}
+      {busyCount > 0 && <p className="muted">可以切去别的页面，杀掉 App 重开也会接着跑；直接保存会先存原图，抠好后自动换白底图</p>}
       <button className="primary" disabled={!entries.length || saving} onClick={save}>
         {saving ? '保存中…' : entries.length > 1 ? `保存 ${entries.length} 件到衣柜` : '保存到衣柜'}
         {busyCount > 0 && entries.length > 1 ? `（${busyCount} 张还在处理）` : ''}

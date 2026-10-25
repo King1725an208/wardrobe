@@ -95,7 +95,7 @@ export type Theme = (typeof THEMES)[number]['key']
 
 export type Stage = 'idle' | 'loading' | 'done' | 'failed'
 
-/** 录入页的每张待保存照片（全局暂存，切页面不丢） */
+/** 录入页的每张待保存照片（持久化到 IDB addQueue，切页/刷新/杀掉 App 都不丢） */
 export interface AddEntry {
   key: string
   photo: Blob
@@ -107,6 +107,24 @@ export interface AddEntry {
   aiError: string
   draft: import('./draft').Draft
   dupOf?: string // 录入查重命中：衣柜中某件的 id；与本批另一张照片重复时为 'batch'
+}
+
+/** AddEntry 在 IDB addQueue 里的存储行（多一个排序序号） */
+export interface AddQueueRow extends AddEntry {
+  seq: number
+}
+
+/**
+ * 「先存后补」的后台抠图任务（IDB bgTasks）：
+ * 保存时白底图还没好 → 衣物先以原图入库，任务落盘；
+ * App 打开期间用并发池尽力跑，好了自动换主图；杀掉/刷新后下次打开续跑。
+ */
+export interface BgTask {
+  itemId: string
+  photo: Blob // 待抠的原图
+  tries: number // 已失败次数（≥3 放弃，详情页仍可手动重抠）
+  createdAt: number
+  lastError?: string
 }
 
 export interface Settings {
