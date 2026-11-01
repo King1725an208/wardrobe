@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import * as db from './db'
-import { enqueueBgTask, onBgTaskSettled, resumeBgTasks } from './bgtasks'
+import { enqueueBgTask, holdBgTask, onBgTaskSettled, releaseBgTask, resumeBgTasks } from './bgtasks'
 import type { AddEntry, NewItem, OutfitRecord, Settings, WardrobeItem } from './types'
 
 interface State {
@@ -23,6 +23,10 @@ interface State {
   completeBg: (itemId: string, cutout: Blob) => Promise<void>
   /** 保存时抠图已失败 → 落一条后台补抠任务（P2-2） */
   enqueueBg: (itemId: string, photo: Blob) => Promise<void>
+  /** 保存时抠图还在飞：落占位任务，杀掉 App 后重开也能补上白底图 */
+  holdBg: (itemId: string, photo: Blob) => Promise<void>
+  /** 在飞抠图回来了：cutout 有图就换主图（null = 原图已是白底），然后清掉占位任务 */
+  settleHandoff: (itemId: string, cutout: Blob | null) => Promise<void>
 }
 
 export const useStore = create<State>((set, get) => ({
@@ -92,6 +96,15 @@ export const useStore = create<State>((set, get) => ({
     if (!s.doubaoApiKey || s.removeBg === false) return // 没 key 或用户关了去背景：不补
     if (!get().bgPending.includes(itemId)) set({ bgPending: [...get().bgPending, itemId] })
     await enqueueBgTask(itemId, photo, s)
+  },
+  holdBg: async (itemId, photo) => {
+    if (!get().bgPending.includes(itemId)) set({ bgPending: [...get().bgPending, itemId] })
+    await holdBgTask(itemId, photo, get().settings)
+  },
+  settleHandoff: async (itemId, cutout) => {
+    if (cutout) await get().completeBg(itemId, cutout)
+    else set({ bgPending: get().bgPending.filter((id) => id !== itemId) })
+    await releaseBgTask(itemId)
   },
 }))
 
