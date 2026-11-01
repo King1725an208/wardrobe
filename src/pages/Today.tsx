@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
 import { markWorn } from '../db'
 import { CATEGORIES } from '../types'
@@ -8,6 +8,8 @@ import type { Category, OutfitRecord, WardrobeItem } from '../types'
 import { localDate } from '../date'
 import { getDayInfo, getWeather, type DayInfo, type Weather } from '../weather'
 import WeatherCard from '../components/WeatherCard'
+import TodayPick from '../components/TodayPick'
+import type { RecCtx } from '../recommend'
 
 const today = () => localDate()
 
@@ -75,7 +77,7 @@ function OutfitCard({ rec }: { rec: OutfitRecord }) {
 }
 
 export default function Today() {
-  const { outfits, items, saveOutfit, load } = useStore()
+  const { outfits, items, settings, saveOutfit, load } = useStore()
   const camRef = useRef<HTMLInputElement>(null)
   const galRef = useRef<HTMLInputElement>(null)
   const existing = outfits.find((o) => o.date === today())
@@ -89,6 +91,8 @@ export default function Today() {
     void getWeather().then(setWeather)
     void getDayInfo().then(setDay)
   }, [])
+  const date = today()
+  const ctx = useMemo<RecCtx>(() => ({ date, weather, day, outfits, settings }), [date, weather, day, outfits, settings])
 
   const toggle = (id: string) =>
     setPicked(picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id])
@@ -104,17 +108,18 @@ export default function Today() {
     }
   }
 
-  const save = async () => {
+  const save = async (ids: string[] = picked) => {
     const rec: OutfitRecord = {
       id: existing?.id ?? crypto.randomUUID(),
       date: today(),
       photo,
-      itemIds: picked,
+      itemIds: ids,
       note: note || undefined,
       createdAt: existing?.createdAt ?? Date.now(),
     }
     await saveOutfit(rec)
-    await markWorn(rec.date, picked)
+    await markWorn(rec.date, ids)
+    setPicked(ids)
     await load()
     alert('已记录今天的穿搭 ✓')
   }
@@ -123,6 +128,7 @@ export default function Today() {
     <div className="page">
       <h1>今日穿搭 <span className="muted">{today()}</span></h1>
       <WeatherCard weather={weather} day={day} />
+      <TodayPick ctx={ctx} wornIds={existing?.itemIds} onWear={save} />
       <input ref={camRef} type="file" accept="image/*,.heic,.heif,.livp" capture="user" hidden onChange={(e) => pick(e.target.files?.[0])} />
       <input ref={galRef} type="file" accept="image/*,.heic,.heif,.livp" hidden onChange={(e) => pick(e.target.files?.[0])} />
       {url && <img className="preview" src={url} alt="" />}
@@ -131,7 +137,7 @@ export default function Today() {
         <button className="photo-btn" onClick={() => galRef.current?.click()}>🖼️ 从相册选</button>
       </div>
 
-      <label>今天穿了衣柜里的哪几件？</label>
+      <label>或者自己挑：今天穿了衣柜里的哪几件？</label>
       <div className="pick-grid">
         {items.map((i) => (
           <PickThumb key={i.id} id={i.id} picked={picked.includes(i.id)} onToggle={toggle} />
@@ -140,7 +146,7 @@ export default function Today() {
 
       <label>一句话</label>
       <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="今天去…" />
-      <button className="primary" onClick={save}>
+      <button className="primary" onClick={() => save()}>
         {existing ? '更新今日记录' : '记录今天'}
       </button>
 
