@@ -87,6 +87,28 @@ export async function markWorn(date: string, itemIds: string[]): Promise<void> {
   await tx.done
 }
 
+/** 今天的记录里去掉了某几件：撤回今天那次 +1，上次穿着时间退回到之前最近一次 */
+export async function unmarkWorn(date: string, itemIds: string[]): Promise<void> {
+  if (!itemIds.length) return
+  const d = await db()
+  const day = new Date(date + 'T12:00:00').toDateString()
+  const outfits: OutfitRecord[] = await d.getAll('outfits')
+  const tx = d.transaction('items', 'readwrite')
+  for (const id of itemIds) {
+    const item: WardrobeItem | undefined = await tx.store.get(id)
+    if (!item?.lastWornAt || new Date(item.lastWornAt).toDateString() !== day) continue
+    item.wearCount = Math.max(0, item.wearCount - 1)
+    const prev = outfits
+      .filter((o) => o.date < date && o.itemIds.includes(id))
+      .map((o) => o.date)
+      .sort()
+      .pop()
+    item.lastWornAt = prev ? new Date(prev + 'T12:00:00').getTime() : undefined
+    await tx.store.put(item)
+  }
+  await tx.done
+}
+
 export async function getSettings(): Promise<Settings> {
   const row = await (await db()).get('settings', 'main')
   return (row?.value as Settings) ?? {}

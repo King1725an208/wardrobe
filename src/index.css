@@ -244,3 +244,20 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .rec-btns { display: flex; gap: 10px; margin-top: 10px; }
 .rec-btns > * { flex: 1; margin: 0; }
 .rec-btns .photo-btn { padding: 12px 0; }
+
+/* 今日穿搭：推荐 + 每类一行自己挑 */
+.pick-row { margin-top: 10px; }
+.pick-row-head { display: flex; gap: 6px; align-items: baseline; font-size: 0.85rem; margin-bottom: 4px; }
+.pick-row-head .muted { font-size: 0.75rem; }
+.pick-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x proximity; }
+.pick-strip .rec-tile { flex: 0 0 76px; width: 76px; height: 76px; aspect-ratio: auto; scroll-snap-align: start; }
+.rec-tile.on { border: 3px solid var(--accent); }
+.rec-tile .tick {
+  position: absolute; right: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--accent); color: var(--accent-ink); font-size: 12px; line-height: 18px; text-align: center;
+}
+.rec-photo { margin-top: 12px; }
+.rec-photo img { width: 100%; max-height: 45vh; object-fit: contain; border-radius: 10px; background: #fff; display: block; }
+.rec-photo .rec-btns { margin-top: 8px; }
+.rec-add-photo { margin-top: 12px; padding: 14px 0; }
+.rec-note { margin-top: 10px; width: 100%; }
