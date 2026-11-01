@@ -138,4 +138,5 @@ export interface Settings {
   oftenCount?: number // 默认 3
   rarelyDays?: number // 默认 180
   neverDays?: number // 默认 365
+  autoBackup?: boolean // 改动后自动云备份（默认开，需已填口令）
 }

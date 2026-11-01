@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { useStore } from '../store'
 import { importDemoData } from '../demo'
 import { THEMES } from '../types'
@@ -6,6 +6,8 @@ import { DEFAULT_AI_PROXY } from '../ai'
 import { exportItemsJson, parseItemsJson } from '../backup'
 import { bulkPutItems, saveOutfit } from '../db'
 import { cloudBackup, cloudRestore, getBackupCode, setBackupCode } from '../cloud'
+import { ensurePersisted, markBackup, useBackupStatus } from '../autobackup'
+import { localDate } from '../date'
 
 // File System Access API（Chromium 桌面/新版 Edge 支持）：系统「另存为」对话框，可自选保存位置
 interface SaveFileHandle {
@@ -42,6 +44,11 @@ export default function SettingsPage() {
   const [code, setCode] = useState(getBackupCode)
   const [cloudMsg, setCloudMsg] = useState('')
   const [cloudBusy, setCloudBusy] = useState(false)
+  const backup = useBackupStatus()
+  const [persisted, setPersisted] = useState<boolean | undefined>()
+  useEffect(() => {
+    void ensurePersisted(false).then(setPersisted)
+  }, [])
 
   const doCloudBackup = async () => {
     if (!items.length && !window.confirm('本机衣柜是空的，云备份会把云端这个取件码下的衣服和穿搭全部清空，确定继续？')) return
@@ -51,6 +58,7 @@ export default function SettingsPage() {
       setCode(c)
       const r = await cloudBackup(items, outfits, settings, c, (d, t, label) => setCloudMsg(`${label} ${d}/${t}`))
       const summary = `衣服 ${r.items} 件、穿搭 ${r.outfits} 条；上传 ${r.uploaded} 件，未改动跳过 ${r.skipped} 件${r.removed ? `，云端删除 ${r.removed} 件` : ''}。取件码：${c}`
+      markBackup(r.failed ? `${r.failed} 件没传上去（${r.error}）` : '')
       setCloudMsg(
         r.failed
           ? `⚠️ 有 ${r.failed} 件没传上去（${r.error}），再点一次云备份会补传。${summary}`
@@ -96,7 +104,7 @@ export default function SettingsPage() {
   }
 
   const doExport = async () => {
-    const name = `电子衣柜备份-${new Date().toISOString().slice(0, 10)}.json`
+    const name = `电子衣柜备份-${localDate()}.json`
     // 先弹「另存为」对话框（趁点击手势还有效），选好位置再生成数据；不支持时退回普通下载
     let handle: SaveFileHandle | undefined
     const picker = (window as Window & { showSaveFilePicker?: SaveFilePicker }).showSaveFilePicker
@@ -265,6 +273,30 @@ export default function SettingsPage() {
         </button>
       </div>
       {cloudMsg && <p className={cloudMsg.startsWith('⚠️') ? 'muted' : 'ok'}>{cloudMsg}</p>}
+      <label className="row">
+        <input
+          type="checkbox"
+          checked={settings.autoBackup !== false}
+          onChange={(e) => void saveSettings({ autoBackup: e.target.checked })}
+        />
+        自动云备份（录完衣服、记完穿搭后自动传改动的部分）
+      </label>
+      <p className={backup.error ? 'muted' : 'ok'}>
+        {!settings.doubaoApiKey
+          ? '自动备份需要先在上面填写口令'
+          : backup.error
+            ? `⚠️ 上次自动备份失败：${backup.error}（有网时会再试，也可手动点「云备份」）`
+            : backup.at
+              ? `上次云备份：${new Date(backup.at).toLocaleString('zh-CN', { hour12: false })}`
+              : '还没有云备份过'}
+      </p>
+      <p className="muted">
+        {persisted === true
+          ? '🔒 浏览器已同意长期保存本机数据，不会被自动清理'
+          : persisted === false
+            ? '⚠️ 浏览器没同意长期保存，久不打开可能被系统清理。建议「添加到主屏幕」打开，并保持自动云备份'
+            : '这个浏览器不支持查询存储保护，建议保持自动云备份'}
+      </p>
       <p className="muted">
         云备份把每件衣服和每条穿搭记录（含照片）存到你自己火山账号的 TOS 里，微信/手机浏览器都能用，不用下载文件；重复备份只传改动过的，本地删掉的云端也会删。恢复时同 id 覆盖、不同 id 新增。需要口令。
       </p>
@@ -296,7 +328,7 @@ export default function SettingsPage() {
       </button>
       {demoMsg && <p className="ok">{demoMsg}</p>}
 
-      <p className="muted">数据只保存在本手机，不会上传。</p>
+      <p className="muted">衣服和穿搭默认存在本手机；云备份只会传到你自己火山账号的 TOS。口令 / API Key 不会进任何备份。</p>
       <p className="muted">版本 {__BUILD_TIME__}</p>
 
       {savedOpen && (

@@ -128,6 +128,7 @@ export async function cloudBackup(
   s: Settings,
   code: string,
   onProgress: Progress,
+  opts: { safeRemove?: boolean } = {},
 ): Promise<BackupResult> {
   const base = `${cloudBase(s)}/${code}`
   const remote = (await call(s, base)) as { items: { id: string; hash: string }[] }
@@ -160,7 +161,9 @@ export async function cloudBackup(
   })
 
   const localKeys = new Set(entries.map((en) => en.key))
-  const stale = remote.items.filter((r) => !localKeys.has(r.id))
+  let stale = remote.items.filter((r) => !localKeys.has(r.id))
+  // 自动备份不做大批量删除：万一本机数据被系统清掉了，不能顺手把云端也清空
+  if (opts.safeRemove && stale.length > 3 && stale.length > remote.items.length / 5) stale = []
   let removed = 0
   await pool(stale, 2, async (r) => {
     try {
