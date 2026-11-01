@@ -1,6 +1,6 @@
-import type { Settings, WardrobeItem } from './types'
+import type { OutfitRecord, Settings, WardrobeItem } from './types'
 import { DEFAULT_AI_PROXY } from './ai'
-import { itemToJson, jsonToItem } from './backup'
+import { itemToJson, jsonToItem, jsonToOutfit, outfitToJson } from './backup'
 
 /** 云备份走和 AI 同一个火山函数：把中转地址的 /api/plan/v3 换成 /api/backup */
 export function cloudBase(s: Settings): string {
@@ -106,29 +106,49 @@ async function pool<T>(list: T[], n: number, fn: (x: T) => Promise<void>): Promi
   await Promise.all(workers)
 }
 
-/** 一键云备份：逐件「转文本 → 算 hash → 上传 → 释放」，内存只占一件衣服（iPhone Safari 内存很紧，不能先把全部照片转好再传） */
+/** 穿搭记录和衣服存在同一目录，用前缀区分（id 是 UUID，不含下划线，不会和衣服撞） */
+const OUTFIT_PREFIX = 'outfit_'
+
+type Entry = { key: string; toJson: () => Promise<unknown> }
+
+export type BackupResult = {
+  uploaded: number
+  skipped: number
+  removed: number
+  failed: number
+  error: string
+  items: number
+  outfits: number
+}
+
+/** 一键云备份（衣服 + 穿搭记录）：逐件「转文本 → 算 hash → 上传 → 释放」，内存只占一件（iPhone Safari 内存很紧，不能先把全部照片转好再传） */
 export async function cloudBackup(
   items: WardrobeItem[],
+  outfits: OutfitRecord[],
   s: Settings,
   code: string,
   onProgress: Progress,
-): Promise<{ uploaded: number; skipped: number; removed: number; failed: number; error: string }> {
+): Promise<BackupResult> {
   const base = `${cloudBase(s)}/${code}`
   const remote = (await call(s, base)) as { items: { id: string; hash: string }[] }
   const remoteHash = new Map(remote.items.map((r) => [r.id, r.hash]))
+  const entries: Entry[] = [
+    ...items.map((it) => ({ key: it.id, toJson: () => itemToJson(it) })),
+    ...outfits.map((o) => ({ key: OUTFIT_PREFIX + o.id, toJson: () => outfitToJson(o) })),
+  ]
 
   let done = 0
   let uploaded = 0
   let failed = 0
   let error = ''
-  onProgress(0, items.length, '正在备份…')
+  onProgress(0, entries.length, '正在备份…')
   // 单件失败（重试后仍不行）跳过继续传其他件，最后汇报；下次备份会自动补传
-  await pool(items, 2, async (it) => {
+  await pool(entries, 2, async (en) => {
     try {
-      const body = JSON.stringify(await itemToJson(it))
+      const body = JSON.stringify(await en.toJson())
       const hash = await sha16(body)
-      if (remoteHash.get(it.id) !== hash) {
-        await call(s, `${base}/items/${it.id}__${hash}`, { method: 'PUT', body })
+      if (remoteHash.get(en.key) !== hash) {
+        await call(s, `${base}/items/${en.key}__${hash}`, { method: 'PUT', body })
         uploaded++
       }
     } catch (e) {
@@ -136,11 +156,11 @@ export async function cloudBackup(
       error = e instanceof Error ? e.message : String(e)
     }
     done++
-    onProgress(done, items.length, '正在备份…')
+    onProgress(done, entries.length, '正在备份…')
   })
 
-  const localIds = new Set(items.map((i) => i.id))
-  const stale = remote.items.filter((r) => !localIds.has(r.id))
+  const localKeys = new Set(entries.map((en) => en.key))
+  const stale = remote.items.filter((r) => !localKeys.has(r.id))
   let removed = 0
   await pool(stale, 2, async (r) => {
     try {
@@ -150,27 +170,44 @@ export async function cloudBackup(
       error = e instanceof Error ? e.message : String(e)
     }
   })
-  return { uploaded, skipped: items.length - uploaded - failed, removed, failed, error }
+  return {
+    uploaded,
+    skipped: entries.length - uploaded - failed,
+    removed,
+    failed,
+    error,
+    items: items.length,
+    outfits: outfits.length,
+  }
 }
 
-/** 云恢复：按取件码逐件拉回，每件到手立刻交给 onItem 写库（不在内存里攒），返回件数 */
+/** 云恢复：按取件码逐件拉回，每件到手立刻交给回调写库（不在内存里攒）；老备份只有衣服也能恢复 */
 export async function cloudRestore(
   s: Settings,
   code: string,
   onItem: (item: WardrobeItem) => Promise<void>,
+  onOutfit: (outfit: OutfitRecord) => Promise<void>,
   onProgress: Progress,
-): Promise<{ total: number; failed: number; error: string }> {
+): Promise<{ total: number; items: number; outfits: number; failed: number; error: string }> {
   const base = `${cloudBase(s)}/${code}`
   const remote = (await call(s, base)) as { items: { id: string; hash: string }[] }
   if (!remote.items.length) throw new Error('这个取件码下还没有备份')
   let done = 0
+  let items = 0
+  let outfits = 0
   let failed = 0
   let error = ''
   onProgress(0, remote.items.length, '正在恢复…')
   await pool(remote.items, 2, async (r) => {
     try {
       const raw = await call(s, `${base}/items/${r.id}__${r.hash}`)
-      await onItem(await jsonToItem(raw))
+      if (r.id.startsWith(OUTFIT_PREFIX)) {
+        await onOutfit(await jsonToOutfit(raw))
+        outfits++
+      } else {
+        await onItem(await jsonToItem(raw))
+        items++
+      }
     } catch (e) {
       failed++
       error = e instanceof Error ? e.message : String(e)
@@ -178,5 +215,5 @@ export async function cloudRestore(
     done++
     onProgress(done, remote.items.length, '正在恢复…')
   })
-  return { total: remote.items.length, failed, error }
+  return { total: remote.items.length, items, outfits, failed, error }
 }

@@ -4,7 +4,7 @@ import { importDemoData } from '../demo'
 import { THEMES } from '../types'
 import { DEFAULT_AI_PROXY } from '../ai'
 import { exportItemsJson, parseItemsJson } from '../backup'
-import { bulkPutItems } from '../db'
+import { bulkPutItems, saveOutfit } from '../db'
 import { cloudBackup, cloudRestore, getBackupCode, setBackupCode } from '../cloud'
 
 // File System Access API（Chromium 桌面/新版 Edge 支持）：系统「另存为」对话框，可自选保存位置
@@ -26,7 +26,7 @@ const SWATCHES: Record<string, string[]> = {
 }
 
 export default function SettingsPage() {
-  const { settings, saveSettings, items, load } = useStore()
+  const { settings, saveSettings, items, outfits, load } = useStore()
   const [demoMsg, setDemoMsg] = useState('')
   const [key, setKey] = useState(settings.doubaoApiKey ? KEY_MASK : '')
   const [model, setModel] = useState(settings.doubaoModel ?? 'doubao-seed-2.1-pro')
@@ -44,13 +44,13 @@ export default function SettingsPage() {
   const [cloudBusy, setCloudBusy] = useState(false)
 
   const doCloudBackup = async () => {
-    if (!items.length && !window.confirm('本机衣柜是空的，云备份会把云端这个取件码下的衣服全部清空，确定继续？')) return
+    if (!items.length && !window.confirm('本机衣柜是空的，云备份会把云端这个取件码下的衣服和穿搭全部清空，确定继续？')) return
     setCloudBusy(true)
     try {
       const c = setBackupCode(code)
       setCode(c)
-      const r = await cloudBackup(items, settings, c, (d, t, label) => setCloudMsg(`${label} ${d}/${t}`))
-      const summary = `上传 ${r.uploaded} 件，未改动跳过 ${r.skipped} 件${r.removed ? `，云端删除 ${r.removed} 件` : ''}。取件码：${c}`
+      const r = await cloudBackup(items, outfits, settings, c, (d, t, label) => setCloudMsg(`${label} ${d}/${t}`))
+      const summary = `衣服 ${r.items} 件、穿搭 ${r.outfits} 条；上传 ${r.uploaded} 件，未改动跳过 ${r.skipped} 件${r.removed ? `，云端删除 ${r.removed} 件` : ''}。取件码：${c}`
       setCloudMsg(
         r.failed
           ? `⚠️ 有 ${r.failed} 件没传上去（${r.error}），再点一次云备份会补传。${summary}`
@@ -64,28 +64,29 @@ export default function SettingsPage() {
   }
 
   const doCloudRestore = async () => {
-    if (!window.confirm(`用取件码「${code.trim().toUpperCase()}」从云端恢复？同 id 的衣服会被云端版本覆盖。`)) return
+    if (!window.confirm(`用取件码「${code.trim().toUpperCase()}」从云端恢复？同 id 的衣服和穿搭会被云端版本覆盖。`)) return
     setCloudBusy(true)
     try {
       const c = setBackupCode(code)
       setCode(c)
       const existing = new Set(items.map((i) => i.id))
       let added = 0
-      const { total, failed, error } = await cloudRestore(
+      const r = await cloudRestore(
         settings,
         c,
         async (it) => {
           if (!existing.has(it.id)) added++
           await bulkPutItems([it])
         },
+        saveOutfit,
         (d, t, label) => setCloudMsg(`${label} ${d}/${t}`),
       )
       await load()
-      const ok = total - failed
+      const got = `衣服 ${r.items} 件（新增 ${added} · 覆盖更新 ${r.items - added}）、穿搭 ${r.outfits} 条`
       setCloudMsg(
-        failed
-          ? `⚠️ 恢复了 ${ok} 件，有 ${failed} 件没拿下来（${error}），再点一次云恢复即可补上`
-          : `✅ 云恢复完成：共 ${total} 件（新增 ${added} · 覆盖更新 ${total - added}）`,
+        r.failed
+          ? `⚠️ 恢复了${got}，有 ${r.failed} 件没拿下来（${r.error}），再点一次云恢复即可补上`
+          : `✅ 云恢复完成：${got}`,
       )
     } catch (err) {
       setCloudMsg(`⚠️ ${err instanceof Error ? err.message : '云恢复失败'}`)
@@ -265,7 +266,7 @@ export default function SettingsPage() {
       </div>
       {cloudMsg && <p className={cloudMsg.startsWith('⚠️') ? 'muted' : 'ok'}>{cloudMsg}</p>}
       <p className="muted">
-        云备份把每件衣服（含照片）存到你自己火山账号的 TOS 里，微信/手机浏览器都能用，不用下载文件；重复备份只传改动过的，本地删掉的云端也会删。恢复时同 id 覆盖、不同 id 新增。需要口令。
+        云备份把每件衣服和每条穿搭记录（含照片）存到你自己火山账号的 TOS 里，微信/手机浏览器都能用，不用下载文件；重复备份只传改动过的，本地删掉的云端也会删。恢复时同 id 覆盖、不同 id 新增。需要口令。
       </p>
       <label>本地文件（电脑用）</label>
       <div className="row">
