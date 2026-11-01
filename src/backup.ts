@@ -1,4 +1,4 @@
-import type { WardrobeItem } from './types'
+import type { OutfitRecord, WardrobeItem } from './types'
 
 /** 备份文件里 photo 字段是 base64 data URL（Blob 不能直接进 JSON） */
 type ItemJson = Omit<WardrobeItem, 'photo' | 'originalPhoto'> & {
@@ -53,6 +53,29 @@ export async function jsonToItem(raw: unknown): Promise<WardrobeItem> {
       typeof originalPhoto === 'string' && originalPhoto.startsWith('data:image/')
         ? await dataUrlToBlob(originalPhoto)
         : undefined,
+  }
+}
+
+type OutfitJson = Omit<OutfitRecord, 'photo'> & { photo?: string }
+
+/** 单条穿搭记录 → 可进 JSON 的对象（穿搭照片转 base64） */
+export async function outfitToJson(o: OutfitRecord): Promise<OutfitJson> {
+  const { photo, ...rest } = o
+  return { ...rest, ...(photo ? { photo: await blobToDataUrl(photo) } : {}) }
+}
+
+/** 备份对象 → 穿搭记录（校验 + 照片还原为 Blob） */
+export async function jsonToOutfit(raw: unknown): Promise<OutfitRecord> {
+  const o = raw as Partial<OutfitJson> | null
+  if (!o || typeof o.id !== 'string' || typeof o.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(o.date)) {
+    throw new Error('穿搭备份数据不完整或已损坏')
+  }
+  const { photo, ...rest } = o
+  return {
+    ...(rest as Omit<OutfitRecord, 'photo'>),
+    itemIds: Array.isArray(o.itemIds) ? o.itemIds.map(String) : [],
+    createdAt: typeof o.createdAt === 'number' ? o.createdAt : Date.now(),
+    photo: typeof photo === 'string' && photo.startsWith('data:image/') ? await dataUrlToBlob(photo) : undefined,
   }
 }
 
