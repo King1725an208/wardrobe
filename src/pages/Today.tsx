@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../store'
-import { markWorn } from '../db'
+import { markWorn, unmarkWorn } from '../db'
 import { CATEGORIES } from '../types'
 import { useBlobUrl } from '../useBlobUrl'
-import { normalizePhotoFile } from '../photoFile'
 import type { Category, OutfitRecord, WardrobeItem } from '../types'
 import { localDate } from '../date'
 import { getDayInfo, getWeather, type DayInfo, type Weather } from '../weather'
@@ -77,14 +76,8 @@ function OutfitCard({ rec }: { rec: OutfitRecord }) {
 }
 
 export default function Today() {
-  const { outfits, items, settings, saveOutfit, load } = useStore()
-  const camRef = useRef<HTMLInputElement>(null)
-  const galRef = useRef<HTMLInputElement>(null)
+  const { outfits, settings, saveOutfit, load } = useStore()
   const existing = outfits.find((o) => o.date === today())
-  const [photo, setPhoto] = useState<Blob | undefined>(existing?.photo)
-  const [picked, setPicked] = useState<string[]>(existing?.itemIds ?? [])
-  const [note, setNote] = useState(existing?.note ?? '')
-  const url = useBlobUrl(photo)
   const [weather, setWeather] = useState<Weather | null | undefined>()
   const [day, setDay] = useState<DayInfo | undefined>()
   useEffect(() => {
@@ -94,86 +87,32 @@ export default function Today() {
   const date = today()
   const ctx = useMemo<RecCtx>(() => ({ date, weather, day, outfits, settings }), [date, weather, day, outfits, settings])
 
-  const toggle = (id: string) =>
-    setPicked(picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id])
-
-  // iPhone 导出的 .livp/.heic 先归一化成 JPEG，否则预览不了
-  const pick = async (f: File | undefined) => {
-    if (!f) return
-    try {
-      setPhoto(await normalizePhotoFile(f))
-    } catch (err) {
-      console.error('[照片] 读取失败:', f.name, err)
-      alert(`这张照片读不出来（${err instanceof Error ? err.message : String(err)}），请换一张`)
-    }
-  }
-
-  const save = async (ids: string[] = picked) => {
+  // 照片、衣服、一句话都存在今天这一条记录里；去掉的衣服撤回今天那次穿着次数
+  const save = async (ids: string[], photo: Blob | undefined, note: string) => {
     const rec: OutfitRecord = {
       id: existing?.id ?? crypto.randomUUID(),
-      date: today(),
+      date,
       photo,
       itemIds: ids,
       note: note || undefined,
       createdAt: existing?.createdAt ?? Date.now(),
     }
     await saveOutfit(rec)
-    await markWorn(rec.date, ids)
-    setPicked(ids)
+    await unmarkWorn(date, (existing?.itemIds ?? []).filter((id) => !ids.includes(id)))
+    await markWorn(date, ids)
     await load()
-    alert('已记录今天的穿搭 ✓')
   }
 
   return (
     <div className="page">
-      <h1>今日穿搭 <span className="muted">{today()}</span></h1>
+      <h1>今日穿搭 <span className="muted">{date}</span></h1>
       <WeatherCard weather={weather} day={day} />
-      <TodayPick ctx={ctx} wornIds={existing?.itemIds} onWear={save} />
-      <input ref={camRef} type="file" accept="image/*,.heic,.heif,.livp" capture="user" hidden onChange={(e) => pick(e.target.files?.[0])} />
-      <input ref={galRef} type="file" accept="image/*,.heic,.heif,.livp" hidden onChange={(e) => pick(e.target.files?.[0])} />
-      {url && <img className="preview" src={url} alt="" />}
-      <div className="photo-row">
-        <button className="photo-btn" onClick={() => camRef.current?.click()}>🤳 拍今日穿搭</button>
-        <button className="photo-btn" onClick={() => galRef.current?.click()}>🖼️ 从相册选</button>
-      </div>
-
-      <label>或者自己挑：今天穿了衣柜里的哪几件？</label>
-      <div className="pick-grid">
-        {items.map((i) => (
-          <PickThumb key={i.id} id={i.id} picked={picked.includes(i.id)} onToggle={toggle} />
-        ))}
-      </div>
-
-      <label>一句话</label>
-      <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="今天去…" />
-      <button className="primary" onClick={() => save()}>
-        {existing ? '更新今日记录' : '记录今天'}
-      </button>
+      <TodayPick ctx={ctx} existing={existing} onSave={save} />
 
       <h2>历史记录</h2>
-      {outfits.filter((o) => o.date !== today()).map((o) => (
+      {outfits.filter((o) => o.date !== date).map((o) => (
         <OutfitCard key={o.id} rec={o} />
       ))}
     </div>
-  )
-}
-
-function PickThumb({
-  id,
-  picked,
-  onToggle,
-}: {
-  id: string
-  picked: boolean
-  onToggle: (id: string) => void
-}) {
-  const { items } = useStore()
-  const item = items.find((i) => i.id === id)
-  const url = useBlobUrl(item?.photo)
-  if (!item) return null
-  return (
-    <button className={`thumb ${picked ? 'on' : ''}`} onClick={() => onToggle(id)}>
-      {url && <img src={url} alt="" />}
-    </button>
   )
 }
