@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../store'
 import { markWorn } from '../db'
 import { CATEGORIES } from '../types'
@@ -6,6 +6,8 @@ import { useBlobUrl } from '../useBlobUrl'
 import { normalizePhotoFile } from '../photoFile'
 import type { Category, OutfitRecord, WardrobeItem } from '../types'
 import { localDate } from '../date'
+import { getDayInfo, getWeather, type DayInfo, type Weather } from '../weather'
+import WeatherCard from '../components/WeatherCard'
 
 const today = () => localDate()
 
@@ -81,6 +83,12 @@ export default function Today() {
   const [picked, setPicked] = useState<string[]>(existing?.itemIds ?? [])
   const [note, setNote] = useState(existing?.note ?? '')
   const url = useBlobUrl(photo)
+  const [weather, setWeather] = useState<Weather | null | undefined>()
+  const [day, setDay] = useState<DayInfo | undefined>()
+  useEffect(() => {
+    void getWeather().then(setWeather)
+    void getDayInfo().then(setDay)
+  }, [])
 
   const toggle = (id: string) =>
     setPicked(picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id])
@@ -114,6 +122,7 @@ export default function Today() {
   return (
     <div className="page">
       <h1>今日穿搭 <span className="muted">{today()}</span></h1>
+      <WeatherCard weather={weather} day={day} />
       <input ref={camRef} type="file" accept="image/*,.heic,.heif,.livp" capture="user" hidden onChange={(e) => pick(e.target.files?.[0])} />
       <input ref={galRef} type="file" accept="image/*,.heic,.heif,.livp" hidden onChange={(e) => pick(e.target.files?.[0])} />
       {url && <img className="preview" src={url} alt="" />}

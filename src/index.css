@@ -223,3 +223,8 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .modal-box { background: var(--card); border-radius: var(--radius); box-shadow: 0 10px 34px rgba(40, 60, 40, 0.25); padding: 24px 30px; text-align: center; max-width: 82vw; }
 .modal-title { margin: 0 0 16px; font-size: 1.05em; }
 
+
+/* 今日穿搭：上海天气卡 */
+.wx { background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #fff)); color: #fff; border-radius: var(--radius); padding: 12px 14px; display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.wx-temp { font-size: 2rem; font-weight: 700; line-height: 1; }
+.wx small { display: block; opacity: 0.92; font-size: 0.78rem; margin-top: 2px; }
