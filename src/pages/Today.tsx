@@ -5,10 +5,9 @@ import { CATEGORIES } from '../types'
 import { useBlobUrl } from '../useBlobUrl'
 import { normalizePhotoFile } from '../photoFile'
 import type { Category, OutfitRecord, WardrobeItem } from '../types'
+import { localDate } from '../date'
 
-function today() {
-  return new Date().toISOString().slice(0, 10)
-}
+const today = () => localDate()
 
 const BREAKDOWN_ORDER: Category[] = [
   'outerwear',

@@ -1,3 +1,4 @@
+import { localDate } from './date'
 import * as db from './db'
 import type { NewItem } from './types'
 
@@ -43,7 +44,7 @@ const DEMO: DemoSpec[] = [
 ]
 
 function dateStr(daysAgo: number): string {
-  return new Date(Date.now() - daysAgo * DAY).toISOString().slice(0, 10)
+  return localDate(new Date(Date.now() - daysAgo * DAY))
 }
 
 /** 导入示例数据：5 件衣服 + 3 条历史穿搭记录。返回新增件数。 */
