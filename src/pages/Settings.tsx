@@ -50,7 +50,12 @@ export default function SettingsPage() {
       const c = setBackupCode(code)
       setCode(c)
       const r = await cloudBackup(items, settings, c, (d, t, label) => setCloudMsg(`${label} ${d}/${t}`))
-      setCloudMsg(`✅ 云备份完成：上传 ${r.uploaded} 件，未改动跳过 ${r.skipped} 件${r.removed ? `，云端删除 ${r.removed} 件` : ''}。取件码：${c}`)
+      const summary = `上传 ${r.uploaded} 件，未改动跳过 ${r.skipped} 件${r.removed ? `，云端删除 ${r.removed} 件` : ''}。取件码：${c}`
+      setCloudMsg(
+        r.failed
+          ? `⚠️ 有 ${r.failed} 件没传上去（${r.error}），再点一次云备份会补传。${summary}`
+          : `✅ 云备份完成：${summary}`,
+      )
     } catch (err) {
       setCloudMsg(`⚠️ ${err instanceof Error ? err.message : '云备份失败'}`)
     } finally {
@@ -66,7 +71,7 @@ export default function SettingsPage() {
       setCode(c)
       const existing = new Set(items.map((i) => i.id))
       let added = 0
-      const total = await cloudRestore(
+      const { total, failed, error } = await cloudRestore(
         settings,
         c,
         async (it) => {
@@ -76,7 +81,12 @@ export default function SettingsPage() {
         (d, t, label) => setCloudMsg(`${label} ${d}/${t}`),
       )
       await load()
-      setCloudMsg(`✅ 云恢复完成：共 ${total} 件（新增 ${added} · 覆盖更新 ${total - added}）`)
+      const ok = total - failed
+      setCloudMsg(
+        failed
+          ? `⚠️ 恢复了 ${ok} 件，有 ${failed} 件没拿下来（${error}），再点一次云恢复即可补上`
+          : `✅ 云恢复完成：共 ${total} 件（新增 ${added} · 覆盖更新 ${total - added}）`,
+      )
     } catch (err) {
       setCloudMsg(`⚠️ ${err instanceof Error ? err.message : '云恢复失败'}`)
     } finally {

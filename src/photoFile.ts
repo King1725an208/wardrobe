@@ -125,9 +125,32 @@ async function livpToStill(file: File): Promise<Blob> {
   return isHeicName(name) ? heicToJpeg(blob) : blob
 }
 
-/** 选图统一入口：返回浏览器能解码、AI 能认的 Blob；不支持的抛错由调用方提示 */
+const MAX_SIDE = 2048
+
+/**
+ * 手机直拍 JPEG 常见 3~5MB、4000px：压到长边 2048、质量 0.88，衣柜里肉眼无差，
+ * 体积小 5~10 倍（本地存储、云备份都更快）。PNG/WebP 可能带透明底，保持原样。
+ */
+export async function shrinkPhoto(blob: Blob): Promise<Blob> {
+  if (blob.type !== 'image/jpeg' || blob.size < 800_000) return blob
+  try {
+    const bmp = await createImageBitmap(blob)
+    const scale = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(bmp.width * scale))
+    canvas.height = Math.max(1, Math.round(bmp.height * scale))
+    canvas.getContext('2d')?.drawImage(bmp, 0, 0, canvas.width, canvas.height)
+    bmp.close()
+    const out = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.88))
+    return out && out.size < blob.size ? out : blob
+  } catch {
+    return blob // 压缩失败用原图，不阻塞录入
+  }
+}
+
+/** 选图统一入口：返回浏览器能解码、AI 能认的 Blob（大 JPEG 顺便压缩）；不支持的抛错由调用方提示 */
 export async function normalizePhotoFile(file: File): Promise<Blob> {
-  if (/\.livp$/i.test(file.name)) return livpToStill(file)
+  if (/\.livp$/i.test(file.name)) return shrinkPhoto(await livpToStill(file))
   if (isHeicFile(file)) return heicToJpeg(file)
-  return file
+  return shrinkPhoto(file)
 }
