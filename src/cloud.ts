@@ -36,29 +36,61 @@ async function sha16(text: string): Promise<string> {
   return Array.from(new Uint8Array(d).slice(0, 8), (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-async function call(s: Settings, url: string, init: RequestInit = {}): Promise<Response> {
-  let resp: Response
+const TIMEOUT_MS = 120_000
+const RETRIES = 2
+
+class CloudError extends Error {
+  retry: boolean
+  constructor(message: string, retry: boolean) {
+    super(message)
+    this.retry = retry
+  }
+}
+
+/** 单次请求（含读完响应体）超时即中止，不再无限转圈 */
+async function callOnce(s: Settings, url: string, init: RequestInit): Promise<unknown> {
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), TIMEOUT_MS)
   try {
-    resp = await fetch(url, {
-      ...init,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.doubaoApiKey ?? ''}`, ...(init.headers ?? {}) },
-    })
-  } catch {
-    throw new Error('无法连接中转服务，请检查网络')
-  }
-  if (!resp.ok) {
-    let msg = ''
+    let resp: Response
     try {
-      const j = await resp.json()
-      msg = j?.error?.message || j?.error || ''
+      resp = await fetch(url, {
+        ...init,
+        signal: ac.signal,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.doubaoApiKey ?? ''}`, ...(init.headers ?? {}) },
+      })
     } catch {
-      /* ignore */
+      throw new CloudError(ac.signal.aborted ? '网络太慢，请求超时' : '无法连接中转服务，请检查网络', true)
     }
-    if (resp.status === 401) throw new Error(msg || '口令不对，请检查设置页「口令 / API Key」')
-    if (resp.status === 404 && !msg) throw new Error('中转服务还没更新到支持云备份的版本')
-    throw new Error(msg || `云端返回 ${resp.status}`)
+    let body: unknown = null
+    try {
+      body = await resp.json()
+    } catch {
+      if (ac.signal.aborted) throw new CloudError('网络太慢，请求超时', true)
+    }
+    if (!resp.ok) {
+      const e = (body as { error?: { message?: string } | string } | null)?.error
+      const msg = (typeof e === 'string' ? e : e?.message) || ''
+      if (resp.status === 401) throw new CloudError(msg || '口令不对，请检查设置页「口令 / API Key」', false)
+      if (resp.status === 404 && !msg) throw new CloudError('中转服务还没更新到支持云备份的版本', false)
+      throw new CloudError(msg || `云端返回 ${resp.status}`, resp.status >= 500)
+    }
+    return body
+  } finally {
+    clearTimeout(timer)
   }
-  return resp
+}
+
+/** 网络错误/超时/5xx 自动重试 2 次 */
+async function call(s: Settings, url: string, init: RequestInit = {}): Promise<unknown> {
+  for (let i = 0; ; i++) {
+    try {
+      return await callOnce(s, url, init)
+    } catch (e) {
+      if (!(e instanceof CloudError && e.retry) || i >= RETRIES) throw e
+      await new Promise((r) => setTimeout(r, 2000 * (i + 1)))
+    }
+  }
 }
 
 export type Progress = (done: number, total: number, label: string) => void
@@ -80,20 +112,28 @@ export async function cloudBackup(
   s: Settings,
   code: string,
   onProgress: Progress,
-): Promise<{ uploaded: number; skipped: number; removed: number }> {
+): Promise<{ uploaded: number; skipped: number; removed: number; failed: number; error: string }> {
   const base = `${cloudBase(s)}/${code}`
-  const remote = (await (await call(s, base)).json()) as { items: { id: string; hash: string }[] }
+  const remote = (await call(s, base)) as { items: { id: string; hash: string }[] }
   const remoteHash = new Map(remote.items.map((r) => [r.id, r.hash]))
 
   let done = 0
   let uploaded = 0
+  let failed = 0
+  let error = ''
   onProgress(0, items.length, '正在备份…')
+  // 单件失败（重试后仍不行）跳过继续传其他件，最后汇报；下次备份会自动补传
   await pool(items, 2, async (it) => {
-    const body = JSON.stringify(await itemToJson(it))
-    const hash = await sha16(body)
-    if (remoteHash.get(it.id) !== hash) {
-      await call(s, `${base}/items/${it.id}__${hash}`, { method: 'PUT', body })
-      uploaded++
+    try {
+      const body = JSON.stringify(await itemToJson(it))
+      const hash = await sha16(body)
+      if (remoteHash.get(it.id) !== hash) {
+        await call(s, `${base}/items/${it.id}__${hash}`, { method: 'PUT', body })
+        uploaded++
+      }
+    } catch (e) {
+      failed++
+      error = e instanceof Error ? e.message : String(e)
     }
     done++
     onProgress(done, items.length, '正在备份…')
@@ -101,10 +141,16 @@ export async function cloudBackup(
 
   const localIds = new Set(items.map((i) => i.id))
   const stale = remote.items.filter((r) => !localIds.has(r.id))
+  let removed = 0
   await pool(stale, 2, async (r) => {
-    await call(s, `${base}/items/${r.id}`, { method: 'DELETE' })
+    try {
+      await call(s, `${base}/items/${r.id}`, { method: 'DELETE' })
+      removed++
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e)
+    }
   })
-  return { uploaded, skipped: items.length - uploaded, removed: stale.length }
+  return { uploaded, skipped: items.length - uploaded - failed, removed, failed, error }
 }
 
 /** 云恢复：按取件码逐件拉回，每件到手立刻交给 onItem 写库（不在内存里攒），返回件数 */
@@ -113,17 +159,24 @@ export async function cloudRestore(
   code: string,
   onItem: (item: WardrobeItem) => Promise<void>,
   onProgress: Progress,
-): Promise<number> {
+): Promise<{ total: number; failed: number; error: string }> {
   const base = `${cloudBase(s)}/${code}`
-  const remote = (await (await call(s, base)).json()) as { items: { id: string; hash: string }[] }
+  const remote = (await call(s, base)) as { items: { id: string; hash: string }[] }
   if (!remote.items.length) throw new Error('这个取件码下还没有备份')
   let done = 0
+  let failed = 0
+  let error = ''
   onProgress(0, remote.items.length, '正在恢复…')
   await pool(remote.items, 2, async (r) => {
-    const raw = await (await call(s, `${base}/items/${r.id}__${r.hash}`)).json()
-    await onItem(await jsonToItem(raw))
+    try {
+      const raw = await call(s, `${base}/items/${r.id}__${r.hash}`)
+      await onItem(await jsonToItem(raw))
+    } catch (e) {
+      failed++
+      error = e instanceof Error ? e.message : String(e)
+    }
     done++
     onProgress(done, remote.items.length, '正在恢复…')
   })
-  return remote.items.length
+  return { total: remote.items.length, failed, error }
 }
