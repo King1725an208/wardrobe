@@ -199,12 +199,14 @@ try {
   await waitFor(async () => (await idbAll(page, 'items')).length === 1, 'A 入库')
   let items = await idbAll(page, 'items')
   check('A 保存即入库：主图还是原图', items[0].photo.size === size137 && !items[0].originalPhoto, `photo=${items[0].photo.size}B 原图=${size137}B`)
-  check('A 在飞交接不落 bgTasks 任务', (await idbAll(page, 'bgTasks')).length === 0)
+  check('A 在飞交接先落占位任务（防杀进程丢补图）', (await idbAll(page, 'bgTasks')).length === 1)
   await waitFor(async () => (await idbAll(page, 'items'))[0]?.photo?.size === TINY_SIZE, 'A 自动换图', 20000)
   items = await idbAll(page, 'items')
   check('A 抠图回来主图自动换白底图', items[0].photo.size === TINY_SIZE, `photo=${items[0].photo.size}B`)
   check('A 原图备份到 originalPhoto', items[0].originalPhoto?.size === size137)
   check('A 全程只生成 1 次（交接不重复扣费）', genCalls === 1, `genCalls=${genCalls}`)
+  await waitFor(async () => (await idbAll(page, 'bgTasks')).length === 0, 'A 占位任务清除')
+  check('A 交接完成后占位任务清除', true)
   // ===== A2) 失败落任务 → 后台 runner 重试成功 =====
   failNext = true
   genDelay = 0
@@ -249,7 +251,28 @@ try {
   await waitText(page, 'AI 已预填')
   check('B 识别结果也在', true)
 
-  check('总生成调用 = 5（A1 + A2×2 + B×2）', genCalls === 5, `genCalls=${genCalls}, chatCalls=${chatCalls}`)
+
+  // ===== C) 抠图途中保存并马上关掉 App → 重开后白底图自动补上 =====
+  genDelay = 8000
+  const itemsBeforeC = (await idbAll(page, 'items')).length
+  await clickButton(page, '保存到衣柜') // 保存 B 批次（已抠完）腾空录入页
+  await waitFor(async () => (await idbAll(page, 'items')).length === itemsBeforeC + 1, 'C 前保存 B')
+  await waitText(page, '我的衣柜')
+  await clickButton(page, '＋录入')
+  await (await page.waitForSelector('input[multiple]')).uploadFile(path.join(PIC_DIR, pickFile('137')))
+  await page.waitForFunction(() => /AI 已预填|疑似重复/.test(document.body.innerText))
+  if (await page.evaluate(() => document.body.innerText.includes('疑似重复'))) await clickButton(page, '不是重复，继续识别') // 137 在 A 里录过
+  await waitText(page, 'AI 已预填')
+  await clickButton(page, '保存到衣柜')
+  await waitFor(async () => (await idbAll(page, 'items')).length === itemsBeforeC + 2, 'C 入库')
+  await waitFor(async () => (await idbAll(page, 'bgTasks')).length === 1, 'C 占位任务落盘')
+  await page.close()
+  genDelay = 0
+  const page2 = await browser.newPage()
+  await page2.goto(appUrl, { waitUntil: 'networkidle0' })
+  await waitFor(async () => (await idbAll(page2, 'bgTasks')).length === 0 && (await idbAll(page2, 'items')).every((i) => i.photo.size === TINY_SIZE), 'C 重开后补完', 20000)
+  check('C 抠图途中保存并关掉 App，重开后白底图自动补上', true)
+  check('总生成调用 = 7（A1 + A2×2 + B×2 + C×2）', genCalls === 7, `genCalls=${genCalls}, chatCalls=${chatCalls}`)
 } catch (e) {
   failed = 1
   console.error('❌ 异常:', e instanceof Error ? e.message : e)

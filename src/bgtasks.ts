@@ -64,7 +64,24 @@ export async function enqueueBgTask(itemId: string, photo: Blob, s: Settings): P
   settingsRef = s
   const t: BgTask = { itemId, photo, tries: 0, createdAt: Date.now() }
   await db.putBgTask(t)
+  scheduled.delete(itemId) // 可能是在飞交接失败转过来的（holdBgTask 占着位）
   schedule(t)
+}
+
+/**
+ * 保存时抠图还在飞：先把任务落盘占位（防止此时杀掉 App 丢了补图），
+ * 但本会话不再重复调用，等在飞结果交接；重开 App 时 resume 会照常续跑它。
+ */
+export async function holdBgTask(itemId: string, photo: Blob, s: Settings): Promise<void> {
+  settingsRef = s
+  scheduled.add(itemId)
+  await db.putBgTask({ itemId, photo, tries: 0, createdAt: Date.now() })
+}
+
+/** 在飞结果已交接到衣物上：清掉占位任务 */
+export async function releaseBgTask(itemId: string): Promise<void> {
+  scheduled.delete(itemId)
+  await db.deleteBgTask(itemId)
 }
 
 /** App 启动后续跑残留任务 */

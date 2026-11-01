@@ -49,7 +49,7 @@ function DupHint({ e, onContinue, onRemove }: { e: AddEntry; onContinue: () => v
 }
 
 export default function AddItem({ onDone }: { onDone: () => void }) {
-  const { add, settings, addEntries: entries, addCur: cur, setAddCur: setCur, setAddEntries: setEntries, enqueueBg, completeBg } = useStore()
+  const { add, settings, addEntries: entries, addCur: cur, setAddCur: setCur, setAddEntries: setEntries, enqueueBg, holdBg, settleHandoff } = useStore()
   const camRef = useRef<HTMLInputElement>(null)
   const galRef = useRef<HTMLInputElement>(null)
   const [saving, setSaving] = useState(false)
@@ -89,7 +89,7 @@ export default function AddItem({ onDone }: { onDone: () => void }) {
         const itemId = bgHandoff.get(e.key)
         if (itemId) {
           bgHandoff.delete(e.key)
-          if (b) void completeBg(itemId, b) // 保存后抠图才回来：直接换到已入库的衣物上
+          void settleHandoff(itemId, b) // 保存后抠图才回来：直接换到已入库的衣物上
         }
       })
       .catch((err) => {
@@ -207,8 +207,10 @@ export default function AddItem({ onDone }: { onDone: () => void }) {
         })
         // 先存后补（P2-2）：抠图还在飞 → 结果交接给刚保存的这件（不重复调用）；
         // 抠图已失败 → 落后台任务慢慢重试，好了自动换白底图
-        if (e.bg === 'loading') bgHandoff.set(e.key, item.id)
-        else if (e.bg === 'failed') void enqueueBg(item.id, e.photo)
+        if (e.bg === 'loading') {
+          bgHandoff.set(e.key, item.id)
+          await holdBg(item.id, e.photo)
+        } else if (e.bg === 'failed') void enqueueBg(item.id, e.photo)
       }
       setEntries([])
       setCur(0)
