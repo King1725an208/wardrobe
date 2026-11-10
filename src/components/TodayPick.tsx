@@ -3,7 +3,7 @@ import { useStore } from '../store'
 import { useBlobUrl } from '../useBlobUrl'
 import { wearLevel } from '../frequency'
 import { normalizePhotoFile } from '../photoFile'
-import { CATEGORIES, WEAR_LEVELS } from '../types'
+import { CATEGORIES, SUBTYPES, WEAR_LEVELS } from '../types'
 import type { Category, OutfitRecord, WardrobeItem } from '../types'
 import { compose, missingHint, rank, reasonsFor, recIds, SLOT_ORDER, type Rec, type RecCtx, type Slot } from '../recommend'
 
@@ -49,6 +49,11 @@ function Tile({ item, on, onTap }: { item: WardrobeItem; on: boolean; onTap: (it
   )
 }
 
+function SubThumb({ item }: { item: WardrobeItem }) {
+  const url = useBlobUrl(item.photo)
+  return <span className="sub-thumb">{url && <img src={url} alt="" />}</span>
+}
+
 /** 选一件：同一类只留一件（配饰可多选）；连衣裙和上衣/下装互斥 */
 function toggle(ids: string[], it: WardrobeItem, items: WardrobeItem[]): string[] {
   if (ids.includes(it.id)) return ids.filter((x) => x !== it.id)
@@ -71,6 +76,7 @@ export default function TodayPick({
   const [seed, setSeed] = useState(0)
   const [avoid, setAvoid] = useState<Set<string>>(new Set())
   const [sel, setSel] = useState<string[] | null>(null) // null = 跟着推荐/今天的记录
+  const [openSub, setOpenSub] = useState<Partial<Record<Category, string>>>({}) // 版本2：点进的子类
   const [note, setNote] = useState(existing?.note ?? '')
   const [busy, setBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -139,19 +145,42 @@ export default function TodayPick({
         <span className="muted">点同一行的别的衣服就换掉</span>
       </div>
       {!base && <div className="muted">👗 {missingHint(items, ctx)}</div>}
-      {rows.map((r) => (
-        <div className="pick-row" key={r.cat} data-cat={r.cat}>
-          <div className="pick-row-head">
-            <b>{label(r.cat)}</b>
-            <span className="muted">{r.list.length} 件</span>
+      {rows.map((r) => {
+        const subs = SUBTYPES[r.cat]?.map((x) => ({ ...x, list: r.list.filter((i) => i.subtype === x.key) })).filter((x) => x.list.length > 0) ?? []
+        const cur = openSub[r.cat]
+        const shown = cur ? r.list.filter((i) => i.subtype === cur) : r.list
+        return (
+          <div className="pick-row" key={r.cat} data-cat={r.cat}>
+            <div className="pick-row-head">
+              <b>{label(r.cat)}</b>
+              <span className="muted">{cur ? `${SUBTYPES[r.cat]?.find((x) => x.key === cur)?.label ?? ''} · ${shown.length} 件` : `${r.list.length} 件`}</span>
+            </div>
+            {subs.length > 0 && !cur && (
+              <div className="sub-grid">
+                {subs.map((x) => (
+                  <button key={x.key} className="sub-tile" data-sub={x.key} onClick={() => setOpenSub((o) => ({ ...o, [r.cat]: x.key }))}>
+                    <span className="sub-stack">
+                      {x.list.slice(0, 4).map((it) => <SubThumb key={it.id} item={it} />)}
+                    </span>
+                    <span className="sub-name">{x.label}</span>
+                    <span className="sub-count">{x.list.length} 件</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {(shown.length > 0 || subs.length === 0) && (
+              <div className="pick-strip">
+                {cur && (
+                  <button className="sub-back" onClick={() => setOpenSub((o) => ({ ...o, [r.cat]: undefined }))}>‹ {label(r.cat)}</button>
+                )}
+                {shown.map((it) => (
+                  <Tile key={it.id} item={it} on={ids.includes(it.id)} onTap={(x) => setSel(toggle(ids, x, items))} />
+                ))}
+              </div>
+            )}
           </div>
-          <div className="pick-strip">
-            {r.list.map((it) => (
-              <Tile key={it.id} item={it} on={ids.includes(it.id)} onTap={(x) => setSel(toggle(ids, x, items))} />
-            ))}
-          </div>
-        </div>
-      ))}
+        )
+      })}
       {reasons.length > 0 && (
         <div className="chips rec-why">
           {reasons.map((r) => (
