@@ -202,6 +202,8 @@ export default function Wardrobe({ onOpen }: { onOpen: (id: string) => void }) {
   // 批量识图：缺颜色或风格的衣服补 AI 识别。任务落 IDB 后台队列，页面跳掉/关 App 都不丢，下次打开续跑
   const needsAi = (i: WardrobeItem) => i.colors.length === 0 || i.styles.length === 0
   const aiTodo = filtered.filter((i) => needsAi(i) && !aiPending.includes(i.id))
+  // 重新识图：当前筛选下所有未在识别的衣服（覆盖模式，修错分的分类等）
+  const aiRedo = filtered.filter((i) => !aiPending.includes(i.id))
   const batchIdentify = async () => {
     if (!settings.doubaoApiKey) {
       alert('请先在「设置」页配置 API Key')
@@ -212,6 +214,17 @@ export default function Wardrobe({ onOpen }: { onOpen: (id: string) => void }) {
     if (!window.confirm(`将对 ${targets.length} 件衣服调用 AI 识别，补充颜色/风格/材质/品牌（会消耗 token）。只填空字段，不会覆盖已有内容。确定？`)) return
     setAiMsg(`已加入识别队列 ${targets.length} 件，完成后自动填充；可以随时关闭页面，下次打开继续`)
     for (const it of targets) await enqueueAi(it.id)
+  }
+  const batchReidentify = async () => {
+    if (!settings.doubaoApiKey) {
+      alert('请先在「设置」页配置 API Key')
+      return
+    }
+    const targets = filtered.filter((i) => !aiPending.includes(i.id))
+    if (!targets.length) return
+    if (!window.confirm(`将对 ${targets.length} 件衣服重新识别，覆盖已有的分类/季节/颜色/风格/材质/品牌（价格、备注等手填内容保留；会消耗 token）。适合修正识别错的分类。确定？`)) return
+    setAiMsg(`已加入识别队列 ${targets.length} 件（覆盖模式），完成后自动更新；可以随时关闭页面，下次打开继续`)
+    for (const it of targets) await enqueueAi(it.id, 'overwrite')
   }
 
   // 全衣柜查重：本地感知哈希分组，命中组直接显示在下方（同组相邻、每组最早录入的在前）。
@@ -254,11 +267,21 @@ export default function Wardrobe({ onOpen }: { onOpen: (id: string) => void }) {
           </button>
         </div>
       </div>
-      {(aiTodo.length > 0 || aiPending.length > 0) && (
+      {(aiTodo.length > 0 || aiPending.length > 0 || (!!settings.doubaoApiKey && filtered.length > 0)) && (
         <div className="bg-banner">
-          <button className="primary" onClick={batchIdentify}>
-            {aiTodo.length ? `✨ 一键识图（${aiTodo.length} 件）` : `✨ 识图中 ${aiPending.length} 件…`}
-          </button>
+          <div className="ai-btns">
+            {aiTodo.length > 0 && (
+              <button className="primary" onClick={batchIdentify}>
+                ✨ 一键识图（{aiTodo.length} 件）
+              </button>
+            )}
+            {aiRedo.length > 0 && (
+              <button onClick={batchReidentify} title="重做 AI 识别，覆盖已有的分类/颜色等字段">
+                🔄 重新识图（{aiRedo.length} 件）
+              </button>
+            )}
+          </div>
+          {aiPending.length > 0 && <p className="muted">识图中 {aiPending.length} 件…</p>}
           {aiMsg && <p className="muted">{aiMsg}</p>}
         </div>
       )}
