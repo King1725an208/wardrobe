@@ -14,11 +14,37 @@ function Tile({ item, on, onTap }: { item: WardrobeItem; on: boolean; onTap: (it
   const url = useBlobUrl(item.photo)
   const { settings } = useStore()
   const lv = wearLevel(item, settings)
+  // 方案A：桌面悬停 / 手机长按 0.5s 显示品牌+备注，方便认照片
+  const [tip, setTip] = useState(false)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hasTip = !!(item.brand || item.note)
+  const startPress = () => {
+    if (!hasTip) return
+    timer.current = setTimeout(() => setTip(true), 500)
+  }
+  const endPress = () => {
+    if (timer.current) { clearTimeout(timer.current); timer.current = null }
+  }
   return (
-    <button className={`rec-tile ${on ? 'on' : ''}`} data-id={item.id} data-cat={item.category} onClick={() => onTap(item)}>
+    <button
+      className={`rec-tile ${on ? 'on' : ''}`} data-id={item.id} data-cat={item.category}
+      onClick={() => onTap(item)}
+      onMouseEnter={() => hasTip && setTip(true)}
+      onMouseLeave={() => setTip(false)}
+      onTouchStart={startPress}
+      onTouchEnd={endPress}
+      onTouchMove={endPress}
+      onTouchCancel={endPress}
+    >
       {url && <img src={url} alt="" />}
       {on && <span className="tick">✓</span>}
       {lv && lv !== 'often' && <span className={`badge lv-${lv}`}>{WEAR_LEVELS.find((w) => w.key === lv)?.label}</span>}
+      {tip && hasTip && (
+        <span className="tile-tip" onClick={(e) => e.stopPropagation()}>
+          {item.brand && <b>{item.brand}</b>}
+          {item.note && <span>{item.note}</span>}
+        </span>
+      )}
     </button>
   )
 }

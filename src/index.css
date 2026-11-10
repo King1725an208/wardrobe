@@ -269,3 +269,12 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .rec-photo .rec-btns { margin-top: 8px; }
 .rec-add-photo { margin-top: 12px; padding: 14px 0; }
 .rec-note { margin-top: 10px; width: 100%; }
+
+.rec-tile { position: relative; }
+.tile-tip {
+  position: absolute; left: 50%; bottom: calc(100% + 6px); transform: translateX(-50%);
+  background: rgba(30, 30, 40, .92); color: #fff; font-size: 12px; line-height: 1.4;
+  padding: 6px 10px; border-radius: 8px; white-space: nowrap; z-index: 30;
+  pointer-events: none; display: flex; flex-direction: column; gap: 2px;
+}
+.tile-tip b { font-weight: 600; }
