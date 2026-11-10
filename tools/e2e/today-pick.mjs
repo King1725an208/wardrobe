@@ -1,4 +1,4 @@
-// 今日穿搭页 E2E：天气（模拟 18° 小雨）→ 推荐选中 → 每类一行换一件 → 就穿这套 → 改一件 → 照片自动存 → 先拍照后选衣服
+// 今日穿搭页 E2E（方案C 每类一张卡）：天气（模拟 18° 小雨）→ 推荐选中 → 点卡换一件 → 就穿这套 → 改一件 → 照片自动存 → 先拍照后选衣服
 // 先 npm run build，再：CHROME_PATH=... node tools/e2e/today-pick.mjs
 import { createServer } from 'node:http'
 import { readFile, writeFile } from 'node:fs/promises'
@@ -93,14 +93,23 @@ const dbAll = (store) =>
   }, store)
 const outfits = () => dbAll('outfits')
 const wear = async () => Object.fromEntries((await dbAll('items')).map((i) => [i.id, i.wearCount]))
-const selected = () => page.$$eval('.rec .rec-tile.on', (x) => x.map((e) => `${e.dataset.cat}:${e.dataset.id}`))
+// 方案C：选中状态在卡片的 data-ids 里（收起态就能读到）
+const selected = () =>
+  page.$$eval('.outfit-card[data-ids]', (xs) =>
+    xs.flatMap((e) => (e.dataset.ids ? e.dataset.ids.split(' ').map((id) => `${e.dataset.cat}:${id}`) : [])),
+  )
 const cats = (sel) => sel.map((s) => s.split(':')[0])
 const btnText = () => page.$eval('.rec .rec-btns button.primary', (b) => b.innerText)
+// 点分类卡展开 → 点第一个没选的候选 → 卡片自动收起
 const tapUnselected = async (cat) => {
-  const t = await page.$(`.pick-row[data-cat="${cat}"] .rec-tile:not(.on)`)
+  await page.click(`.outfit-card[data-cat="${cat}"]`)
+  await page.waitForSelector(`.outfit-card.open[data-cat="${cat}"] .pick-option`)
+  const t = await page.$(`.outfit-card.open[data-cat="${cat}"] .pick-option:not(.on)`)
+  const id = await page.evaluate((e) => e.dataset.id, t)
   await t.click()
-  await sleep(200)
-  return page.evaluate((e) => e.dataset.id, t)
+  await page.waitForFunction((c) => !document.querySelector(`.outfit-card.open[data-cat="${c}"]`), {}, cat)
+  await sleep(150)
+  return id
 }
 // 测试用照片
 const jpg = path.join(os.tmpdir(), 'today-e2e.jpg')
@@ -120,15 +129,16 @@ const upload = async () => {
 }
 
 await click('今日穿搭')
-await page.waitForSelector('.rec-tile.on')
+await page.waitForSelector('.outfit-card.on')
 const wx = await page.$eval('.wx', (e) => e.innerText.replace(/\n/g, ' '))
 ok(/18°.*小雨.*14~19°C.*记得带伞/.test(wx), '天气卡显示模拟的 18° 小雨', wx)
-const rowCats = await page.$$eval('.pick-row', (x) => x.map((e) => e.dataset.cat).join(','))
-ok(rowCats === 'outerwear,top,dress,bottom,shoes,bag' && !(await page.$('.pick-grid')), '每类一行，不再把所有衣服堆在一起', rowCats)
+const rowCats = await page.$$eval('.outfit-card[data-ids]', (x) => x.map((e) => e.dataset.cat).join(','))
+ok(rowCats === 'outerwear,top,dress,bottom,shoes,bag', '每类一张卡，不把所有衣服堆在一个界面', rowCats)
 const c1 = cats(await selected())
 ok(c1.includes('outerwear') && ((c1.includes('top') && c1.includes('bottom')) || c1.includes('dress')), '推荐的一套已选中，下雨 19° 带外套', c1.join())
-const firstOn = await page.$$eval('.pick-row', (rows) => rows.every((r) => !r.querySelector('.rec-tile.on') || r.querySelector('.rec-tile').classList.contains('on')))
-ok(firstOn, '推荐的那件排在每行最前面')
+// 收起态卡片上能直接看到品牌/备注位置（图下面有 meta 行）
+const cardMeta = await page.$eval('.outfit-card.on .oc-info', (e) => e.innerText.replace(/\n/g, ' / '))
+ok(cardMeta.includes('点我换一件'), '卡片上有「点我换一件」入口', cardMeta)
 const why = await page.$eval('.rec-why', (e) => e.innerText.replace(/\n/g, ' / '))
 ok(why.includes('挡雨'), '推荐理由', why)
 if (SHOT) await page.screenshot({ path: `${SHOT}/today-pick.png`, fullPage: true })
@@ -147,8 +157,11 @@ ok(after.includes(`shoes:${shoe}`) && after.length === before.length && after.fi
 // 连衣裙和上衣/下装互斥
 const hadDress = cats(after).includes('dress')
 if (hadDress) { await tapUnselected('top'); await tapUnselected('bottom') }
-await page.$eval('.pick-row[data-cat="dress"] .rec-tile', (e) => e.click())
-await sleep(200)
+await page.click('.outfit-card[data-cat="dress"]')
+await page.waitForSelector('.outfit-card.open[data-cat="dress"] .pick-option')
+await page.$eval('.outfit-card.open[data-cat="dress"] .pick-option:not(.on)', (e) => e.click())
+await page.waitForFunction(() => !document.querySelector('.outfit-card.open'))
+await sleep(150)
 const d = cats(await selected())
 ok(d.includes('dress') && !d.includes('top') && !d.includes('bottom'), '选连衣裙会去掉上衣和下装', d.join())
 await tapUnselected('top')
@@ -185,7 +198,7 @@ ok((await btnText()).includes('今天已记录'), '加照片后仍显示已记�
 const s2 = (await selected()).sort().join()
 await page.reload({ waitUntil: 'networkidle0' })
 await click('今日穿搭')
-await page.waitForSelector('.rec-tile.on')
+await page.waitForSelector('.outfit-card.on')
 ok((await selected()).sort().join() === s2 && !!(await page.$('.rec-photo img')) && (await btnText()).includes('今天已记录'), '刷新后显示今天记下的那套和照片')
 
 const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)
@@ -205,7 +218,7 @@ await page.evaluate(async () => {
 })
 await page.reload({ waitUntil: 'networkidle0' })
 await click('今日穿搭')
-await page.waitForSelector('.rec-tile.on')
+await page.waitForSelector('.outfit-card.on')
 await upload()
 os1 = await outfits()
 w = await wear()
