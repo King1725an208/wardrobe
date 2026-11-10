@@ -180,6 +180,8 @@ onAiTaskSettled((itemId, guess, _err, final, mode) => {
       const patch: Partial<WardrobeItem> = mode === 'overwrite'
         ? {
             ...(guess.category ? { category: guess.category } : {}),
+            // 子类跟着分类走：AI 给了分类就用它的子类（没有则清空），没给分类就保留原子类
+            ...(guess.category ? { subtype: guess.subtype } : {}),
             ...(guess.season ? { season: guess.season } : {}),
             ...(guess.colors?.length ? { colors: guess.colors } : {}),
             ...(guess.styles?.length ? { styles: guess.styles } : {}),

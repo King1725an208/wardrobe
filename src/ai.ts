@@ -1,8 +1,9 @@
-import { STANDARD_COLORS, STYLE_TAGS, type Category, type Season, type Settings } from './types'
+import { STANDARD_COLORS, STYLE_TAGS, SUBTYPES, type Category, type Season, type Settings } from './types'
 import { normalizeCutout } from './image'
 
 export interface AiGuess {
   category?: Category
+  subtype?: string
   colors?: string[]
   styles?: string[]
   season?: Season
@@ -29,13 +30,14 @@ const IDENTIFY_PROMPT = `你是电子衣柜的服装录入助手。照片里是�
 
 JSON 字段：
 - category: 只能取 top/bottom/dress/outerwear/shoes/bag/accessory。辨析：裤子（牛仔裤/运动裤/休闲裤/短裤）和半身裙都有腰头和腿部结构，选 bottom，绝不要因为颜色或版型像上衣就选 top；连衣裙有肩带、袖子等上半身结构选 dress；开衫、马甲等外搭选 outerwear；拿不准时先找裤腿或裙摆，裤子不是上衣
+- subtype: 这件衣服的子类，按 category 填 key。上衣 top：短袖无袖薄款=Polo/T 恤选 tee_polo，衬衫/格纹/条纹衬衫=shirt，长袖薄 T 恤/打底=long_tee，卫衣/连帽衫=hoodie，毛衣/针织衫/开衫=knit（有厚度的针织），其他长袖=other_long。下装 bottom：短裤=shorts，牛仔裤/西裤/薄运动裤=long_thin，束脚/加绒/厚运动裤=long_thick，半身裙=skirt。外套 outerwear：薄夹克/防晒/牛仔外套/薄风衣=thin，加绒/棉服/厚外套/羽绒=thick。连衣裙 dress：短袖或无袖=short，长袖=long，针织/毛衣裙=knit。鞋 shoes：运动鞋=sport，板鞋/单鞋/高跟=casual，靴子=boots，凉鞋拖鞋=sandal。包 bag：通勤包/手提包=commute，双肩包/帆布包=casual，旅行/度假包=travel。配饰 accessory：帽子=hat，围巾披肩=scarf，腰带=belt，眼镜=glasses，其他=other。拿不准选最接近的一个，必填。
 - colors: 衣物本身的颜色，按面积占比从大到小，最多3个；只能从标准色表中选：黑、白、米白、米黄、灰、卡其、驼色、咖啡、藏青、浅蓝、牛仔蓝、粉、玫红、红、酒红、橙、黄、浅绿、墨绿、紫、花色。多色印花/拼接时主色在前，"花色"放最后。
 - styles: 从以下6个标签中选最符合的1-2个：通勤（简洁利落适合上班）、休闲（日常随意）、运动（运动品牌/功能面料/为运动设计）、甜美（浅柔色系、女性化细节）、正式（正装礼服）、度假（鲜艳印花、宽松沙滩感）
 - season: 夏/春秋/冬，按面料厚薄和袖长判断：短袖薄款=夏；长袖、针织、卫衣、薄外套=春秋；厚毛衣、羽绒、加绒=冬
 - brand: 看清 logo 才填，否则空字符串
 - material: 看得出材质才填（棉/羊毛/针织/牛仔/雪纺/尼龙/皮革等），否则空字符串
 
-输出示例：{"category":"outerwear","colors":["黑"],"styles":["运动"],"season":"春秋","brand":"Under Armour","material":"尼龙"}`
+输出示例：{"category":"outerwear","subtype":"thin","colors":["黑"],"styles":["运动"],"season":"春秋","brand":"Under Armour","material":"尼龙"}`
 
 function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -158,6 +160,10 @@ export async function identifyClothing(photo: Blob, s: Settings): Promise<AiGues
     // 防止模型自由发挥（如"浅裸粉色"）导致筛选器和标签体系失效
     const guess: AiGuess = {}
     if (VALID_CATEGORIES.includes(raw.category as Category)) guess.category = raw.category as Category
+    // 子类必须是 category 名下的合法 key，否则丢弃（防模型自由发挥）
+    if (typeof raw.subtype === 'string' && guess.category && SUBTYPES[guess.category]?.some((s) => s.key === raw.subtype)) {
+      guess.subtype = raw.subtype
+    }
     if (VALID_SEASONS.includes(raw.season as Season)) guess.season = raw.season as Season
     if (Array.isArray(raw.colors)) {
       const rawColors = raw.colors.map(String)

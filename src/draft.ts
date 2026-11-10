@@ -1,9 +1,11 @@
 import type { Category, Season, WardrobeItem } from './types'
+import { SUBTYPES } from './types'
 import type { AiGuess } from './ai'
 
 /** 录入/编辑共用的表单草稿（全部字符串，方便绑定输入框） */
 export interface Draft {
   category: Category
+  subtype?: string // 子类 key（见 SUBTYPES）；换分类时由 ItemForm 清空
   brand: string
   purchasedAt: string
   price: string
@@ -17,6 +19,7 @@ export interface Draft {
 export function emptyDraft(): Draft {
   return {
     category: 'top',
+    subtype: undefined,
     brand: '',
     purchasedAt: '',
     price: '',
@@ -31,6 +34,7 @@ export function emptyDraft(): Draft {
 export function draftFromItem(i: WardrobeItem): Draft {
   return {
     category: i.category,
+    subtype: i.subtype,
     brand: i.brand ?? '',
     purchasedAt: i.purchasedAt?.slice(0, 4) ?? '', // 统一取年份（旧数据可能是 YYYY-MM）
     price: i.price != null ? String(i.price) : '',
@@ -42,10 +46,18 @@ export function draftFromItem(i: WardrobeItem): Draft {
   }
 }
 
+/** 子类必须属于当前分类；AI 换了分类但没给子类 → 清空，避免对不上 */
+function mergeSubtype(category: Category, ai?: string, cur?: string) {
+  const ok = (k?: string) => (k && SUBTYPES[category]?.some((x) => x.key === k) ? k : undefined)
+  return ok(ai) ?? ok(cur)
+}
+
 export function applyGuess(d: Draft, g: AiGuess): Draft {
+  const category = g.category ?? d.category
   return {
     ...d,
-    category: g.category ?? d.category,
+    category,
+    subtype: mergeSubtype(category, g.subtype, d.subtype),
     season: g.season ?? d.season,
     colors: g.colors?.length ? g.colors.join(' ') : d.colors,
     styles: g.styles?.length ? g.styles : d.styles,
@@ -58,6 +70,7 @@ export function applyGuess(d: Draft, g: AiGuess): Draft {
 export function draftToFields(d: Draft) {
   return {
     category: d.category,
+    subtype: d.subtype,
     brand: d.brand.trim() || undefined,
     purchasedAt: /^\d{4}$/.test(d.purchasedAt) ? d.purchasedAt : undefined, // 只接受四位年份
     price: d.price ? Number(d.price) : undefined,
