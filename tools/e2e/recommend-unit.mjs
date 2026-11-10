@@ -71,6 +71,20 @@ for (let seed = 0; seed < 30; seed++) {
   ok(!bad, '8° 不推夏装')
 }
 
+// 2b. 保暖度：32° 时长袖毛衣(warm 3) 排在短袖T恤(warm 1) 后面；8° 时反过来
+{
+  const hot = [
+    it('top', '夏', { subtype: 'tee_polo', styles: ['休闲'] }),
+    it('top', '冬', { subtype: 'knit', styles: ['休闲'] }),
+  ]
+  const c = ctxOf(W(32))
+  const rk = R.rank(hot, c, 0)
+  ok(rk.bySlot.top[0].subtype === 'tee_polo', '32° 短袖排前（保暖度贴温）', rk.bySlot.top.map((x) => x.subtype).join(','))
+  const cold = ctxOf(W(8))
+  const rk2 = R.rank(hot, cold, 0)
+  ok(rk2.bySlot.top[0].subtype === 'knit', '8° 长袖毛衣排前', rk2.bySlot.top.map((x) => x.subtype).join(','))
+}
+
 // 3. 下雨：鞋不推白色，22° 下雨也带外套
 {
   const c = ctxOf(W(22, true))
