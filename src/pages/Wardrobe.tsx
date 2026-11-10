@@ -17,6 +17,7 @@ function Card({ item, onOpen }: { item: WardrobeItem; onOpen: (id: string) => vo
   const url = useBlobUrl(item.photo)
   const { settings, update } = useStore()
   const bgPending = useStore((s) => s.bgPending.includes(item.id)) // 后台补抠中：显示角标，好了自动换白底图
+  const aiPending = useStore((s) => s.aiPending.includes(item.id)) // 后台识图中：显示角标，识别完自动填颜色/风格
   const [open, setOpen] = useState<TagKey | null>(null)
   const lv = wearLevel(item, settings)
   const lvLabel = lv ? WEAR_LEVELS.find((w) => w.key === lv)!.label : '没定义'
@@ -41,7 +42,7 @@ function Card({ item, onOpen }: { item: WardrobeItem; onOpen: (id: string) => vo
     <div className="card">
       <button className="card-img" onClick={() => onOpen(item.id)}>
         {url ? <img src={url} alt="" /> : <div className="ph" />}
-        {bgPending && <span className="bg-pending">抠图中…</span>}
+        {(bgPending || aiPending) && <span className="bg-pending">{bgPending ? '抠图中…' : '识图中…'}</span>}
       </button>
       <div className="card-info">
         <div className="card-title" onClick={() => onOpen(item.id)}>
@@ -121,7 +122,7 @@ function Card({ item, onOpen }: { item: WardrobeItem; onOpen: (id: string) => vo
 }
 
 export default function Wardrobe({ onOpen }: { onOpen: (id: string) => void }) {
-  const { items, settings, update } = useStore()
+  const { items, settings, update, aiPending, enqueueAi } = useStore()
   const [cat, setCat] = useState<Category | 'all'>('all')
   const [season, setSeason] = useState<string>('all')
   const [style, setStyle] = useState<string>('all')
@@ -134,6 +135,7 @@ export default function Wardrobe({ onOpen }: { onOpen: (id: string) => void }) {
   const [dupIds, setDupIds] = useState<string[] | null>(null) // 查重结果视图：非空则只显示这些件（同组相邻）
   const [dupProg, setDupProg] = useState<{ done: number; total: number } | null>(null)
   const [dupMsg, setDupMsg] = useState('')
+  const [aiMsg, setAiMsg] = useState('')
 
   const filtered = useMemo(() => {
     // 查重结果视图：只按组序显示这些件，忽略其他筛选
@@ -197,6 +199,21 @@ export default function Wardrobe({ onOpen }: { onOpen: (id: string) => void }) {
     setBgMsg(`去背景完成：成功 ${targets.length - failed} 件${failed ? `，失败 ${failed} 件（${errMsg}）` : ''}`)
   }
 
+  // 批量识图：缺颜色或风格的衣服补 AI 识别。任务落 IDB 后台队列，页面跳掉/关 App 都不丢，下次打开续跑
+  const needsAi = (i: WardrobeItem) => i.colors.length === 0 || i.styles.length === 0
+  const aiTodo = filtered.filter((i) => needsAi(i) && !aiPending.includes(i.id))
+  const batchIdentify = async () => {
+    if (!settings.doubaoApiKey) {
+      alert('请先在「设置」页配置 API Key')
+      return
+    }
+    const targets = filtered.filter((i) => needsAi(i) && !aiPending.includes(i.id))
+    if (!targets.length) return
+    if (!window.confirm(`将对 ${targets.length} 件衣服调用 AI 识别，补充颜色/风格/材质/品牌（会消耗 token）。只填空字段，不会覆盖已有内容。确定？`)) return
+    setAiMsg(`已加入识别队列 ${targets.length} 件，完成后自动填充；可以随时关闭页面，下次打开继续`)
+    for (const it of targets) await enqueueAi(it.id)
+  }
+
   // 全衣柜查重：本地感知哈希分组，命中组直接显示在下方（同组相邻、每组最早录入的在前）。
   // 不写任何标记；再点一次「查重」退出结果视图。
   const runDedup = async () => {
@@ -237,6 +254,14 @@ export default function Wardrobe({ onOpen }: { onOpen: (id: string) => void }) {
           </button>
         </div>
       </div>
+      {(aiTodo.length > 0 || aiPending.length > 0) && (
+        <div className="bg-banner">
+          <button className="primary" onClick={batchIdentify}>
+            {aiTodo.length ? `✨ 一键识图（${aiTodo.length} 件）` : `✨ 识图中 ${aiPending.length} 件…`}
+          </button>
+          {aiMsg && <p className="muted">{aiMsg}</p>}
+        </div>
+      )}
       {rawOnly && (
         <div className="bg-banner">
           {filtered.length > 0 ? (
