@@ -132,6 +132,7 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .tag.tag-add { border-style: dashed; color: var(--muted); background: transparent; }
 .tag.lv-often { background: var(--often-bg); color: var(--often-ink); border-color: transparent; }
 .tag.lv-rarely { background: var(--rarely-bg); color: var(--rarely-ink); border-color: transparent; }
+.tag.tag-sub { background: var(--accent-soft, #eef2ff); color: var(--accent); border-color: transparent; }
 .tag.lv-never { background: var(--never-bg); color: var(--never-ink); border-color: transparent; }
 .tag.lv-none { color: var(--muted); }
 .tag-drop {
