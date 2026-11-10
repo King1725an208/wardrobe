@@ -137,9 +137,11 @@ onBgTaskSettled((itemId, cutout, _err, final) => {
 
 // 后台识图任务落定：fill 模式只补空字段（颜色/风格/材质/品牌），已有内容和分类/季节一律不动；
 // overwrite 模式（「重新识图」）用 AI 结果覆盖分类/季节/颜色/风格/材质/品牌（只覆盖 AI 给出了值的字段，
-// 价格/备注/尺码等手填内容不受影响）；最终落定（含失败放弃）摘掉「识图中」
+// 价格/备注/尺码等手填内容不受影响）。
+// 先写库再摘「识图中」：编辑页靠这个顺序把识别结果同步进表单（aiPending 变 false 时 item 已是最新）。
 onAiTaskSettled((itemId, guess, _err, final, mode) => {
   const s = useStore.getState()
+  const clearPending = () => useStore.setState({ aiPending: useStore.getState().aiPending.filter((id) => id !== itemId) })
   if (guess) {
     const it = s.items.find((i) => i.id === itemId)
     if (it) {
@@ -158,8 +160,15 @@ onAiTaskSettled((itemId, guess, _err, final, mode) => {
             material: it.material ?? guess.material,
             brand: it.brand ?? guess.brand,
           }
-      void s.update({ ...it, ...patch })
+      void (async () => {
+        try {
+          await s.update({ ...it, ...patch })
+        } finally {
+          if (final) clearPending()
+        }
+      })()
+      return
     }
   }
-  if (final) useStore.setState({ aiPending: useStore.getState().aiPending.filter((id) => id !== itemId) })
+  if (final) clearPending()
 })
