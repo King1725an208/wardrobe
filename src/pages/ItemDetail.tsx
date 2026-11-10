@@ -25,6 +25,7 @@ function EditItem({ item, onDone }: { item: WardrobeItem; onDone: () => void }) 
   const url = useBlobUrl(photo)
   // 「重新识别」：走后台队列（overwrite），落定后把结果同步进表单
   const aiPending = useStore((s) => s.aiPending.includes(item.id))
+  const bgPending = useStore((s) => s.bgPending.includes(item.id)) // 去背景在飞时识图任务会被互斥跳过，先拦住
   const enqueueAi = useStore((s) => s.enqueueAi)
   const [aiNote, setAiNote] = useState('')
   const expectAi = useRef(false)
@@ -33,6 +34,10 @@ function EditItem({ item, onDone }: { item: WardrobeItem; onDone: () => void }) 
   const reidentify = () => {
     if (!settings.doubaoApiKey) {
       alert('请先在「设置」页配置 API Key')
+      return
+    }
+    if (bgPending) {
+      alert('这件衣服正在去背景，等它完成后再重新识别')
       return
     }
     if (!confirm('将重新识别这件衣服并覆盖分类/季节/颜色/风格/材质/品牌（价格、备注等手填内容保留）。确定？')) return
@@ -156,8 +161,8 @@ function EditItem({ item, onDone }: { item: WardrobeItem; onDone: () => void }) 
         <button className="link" onClick={refine}>效果不好？AI 精修（约 1 分钟）</button>
       )}
       {settings.doubaoApiKey && (
-        <button className="link" disabled={aiPending} onClick={reidentify}>
-          {aiPending ? '✨ AI 识别中…' : '✨ 重新识别（覆盖分类/颜色等字段）'}
+        <button className="link" disabled={aiPending || bgPending} onClick={reidentify}>
+          {aiPending ? '✨ AI 识别中…' : bgPending ? '去背景中，稍后可重新识别' : '✨ 重新识别（覆盖分类/颜色等字段）'}
         </button>
       )}
       {aiNote && <p className="muted">{aiNote}</p>}
