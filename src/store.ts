@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import * as db from './db'
 import { enqueueAiTask, enqueueBgTask, holdBgTask, onAiTaskSettled, onBgTaskSettled, releaseBgTask, resumeBgTasks } from './bgtasks'
+import { normalizeCutout } from './image'
+import { createPool } from './pool'
 import type { AddEntry, NewItem, OutfitRecord, Settings, WardrobeItem } from './types'
 
 interface State {
@@ -73,6 +75,8 @@ export const useStore = create<State>((set, get) => ({
       loaded: true,
     })
     void resumeBgTasks(settings) // 后台补抠任务续跑
+    // 一次性整理：早期去背景结果没有统一画幅（格子里大小不一），本地裁边居中，不花 token
+    if (items.some((i) => i.originalPhoto) && !settings.cutoutNorm) void normalizeExistingCutouts()
   },
   add: async (item) => {
     const full = await db.addItem(item)
@@ -134,6 +138,34 @@ onBgTaskSettled((itemId, cutout, _err, final) => {
   if (cutout) void s.completeBg(itemId, cutout)
   else if (final) useStore.setState({ bgPending: s.bgPending.filter((id) => id !== itemId) })
 })
+
+// ---------- 存量白底图统一画幅（一次性） ----------
+const normPool = createPool(2)
+
+/**
+ * 早期去背景结果没有统一画幅（Seedream 每次生成的衣服大小/留白不一，卡片里显示大小不一）。
+ * 本地裁边居中，不花 token。幂等：中途杀掉 App 下次打开继续跑；全部完成后打标记不再跑。
+ * 写回前重读最新衣物，避免盖掉期间识图/编辑更新的字段。
+ */
+async function normalizeExistingCutouts(): Promise<void> {
+  try {
+    const targets = useStore.getState().items.filter((i) => i.originalPhoto)
+    await Promise.all(
+      targets.map((it) =>
+        normPool(async () => {
+          const cur = useStore.getState().items.find((x) => x.id === it.id)
+          if (!cur?.originalPhoto) return
+          const photo = await normalizeCutout(cur.photo)
+          const now = useStore.getState().items.find((x) => x.id === it.id)
+          if (now) await useStore.getState().update({ ...now, photo })
+        }),
+      ),
+    )
+    await useStore.getState().saveSettings({ cutoutNorm: true })
+  } catch (e) {
+    console.warn('统一去背景画幅整理失败（下次打开重试）：', e)
+  }
+}
 
 // 后台识图任务落定：fill 模式只补空字段（颜色/风格/材质/品牌），已有内容和分类/季节一律不动；
 // overwrite 模式（「重新识图」）用 AI 结果覆盖分类/季节/颜色/风格/材质/品牌（只覆盖 AI 给出了值的字段，

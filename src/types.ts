@@ -141,4 +141,5 @@ export interface Settings {
   rarelyDays?: number // 默认 180
   neverDays?: number // 默认 365
   autoBackup?: boolean // 改动后自动云备份（默认开，需已填口令）
+  cutoutNorm?: boolean // 存量白底图已统一画幅（一次性整理标记，见 store.normalizeExistingCutouts）
 }

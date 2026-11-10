@@ -41,7 +41,6 @@ function check(name, ok, detail = '') {
 // ---------- 桩：方舟 API ----------
 // 桩返回的「白底图」：1x1 透明 PNG（与 photo-upload.mjs 同一常量；App 只当字节存 Blob）
 const TINY_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
-const TINY_SIZE = Buffer.from(TINY_B64, 'base64').length
 let genDelay = 0
 let failNext = false
 let genCalls = 0
@@ -200,9 +199,12 @@ try {
   let items = await idbAll(page, 'items')
   check('A 保存即入库：主图还是原图', items[0].photo.size === size137 && !items[0].originalPhoto, `photo=${items[0].photo.size}B 原图=${size137}B`)
   check('A 在飞交接先落占位任务（防杀进程丢补图）', (await idbAll(page, 'bgTasks')).length === 1)
-  await waitFor(async () => (await idbAll(page, 'items'))[0]?.photo?.size === TINY_SIZE, 'A 自动换图', 20000)
+  await waitFor(async () => {
+    const it = (await idbAll(page, 'items'))[0]
+    return it && it.photo.size !== size137 && it.photo.size > 0 // 去背景结果经本地统一画幅处理，字节数不再等于桩图
+  }, 'A 自动换图', 20000)
   items = await idbAll(page, 'items')
-  check('A 抠图回来主图自动换白底图', items[0].photo.size === TINY_SIZE, `photo=${items[0].photo.size}B`)
+  check('A 抠图回来主图自动换白底图', items[0].photo.size !== size137 && items[0].photo.size > 0, `photo=${items[0].photo.size}B`)
   check('A 原图备份到 originalPhoto', items[0].originalPhoto?.size === size137)
   check('A 全程只生成 1 次（交接不重复扣费）', genCalls === 1, `genCalls=${genCalls}`)
   await waitFor(async () => (await idbAll(page, 'bgTasks')).length === 0, 'A 占位任务清除')
@@ -222,7 +224,7 @@ try {
   await waitFor(async () => page.evaluate(() => !!document.querySelector('.bg-pending')), 'A2 角标')
   check('A2 卡片显示「抠图中」角标', true)
   await waitFor(
-    async () => (await idbAll(page, 'items')).some((i) => i.photo.size === TINY_SIZE && i.originalPhoto?.size === size139),
+    async () => (await idbAll(page, 'items')).some((i) => i.photo.size !== size139 && i.originalPhoto?.size === size139),
     'A2 自动换图',
     15000,
   )
@@ -242,7 +244,7 @@ try {
   await waitFor(async () => page.evaluate(() => !!document.querySelector('img.preview')), 'B 批次恢复')
   check('B 刷新后批次照片还在', true)
   await waitFor(
-    async () => (await idbAll(page, 'addQueue')).some((r) => r.bg === 'done' && r.cutout?.size === TINY_SIZE),
+    async () => (await idbAll(page, 'addQueue')).some((r) => r.bg === 'done' && (r.cutout?.size ?? 0) > 0),
     'B 续跑完成',
     15000,
   )
@@ -270,7 +272,7 @@ try {
   genDelay = 0
   const page2 = await browser.newPage()
   await page2.goto(appUrl, { waitUntil: 'networkidle0' })
-  await waitFor(async () => (await idbAll(page2, 'bgTasks')).length === 0 && (await idbAll(page2, 'items')).every((i) => i.photo.size === TINY_SIZE), 'C 重开后补完', 20000)
+  await waitFor(async () => (await idbAll(page2, 'bgTasks')).length === 0 && (await idbAll(page2, 'items')).every((i) => i.originalPhoto), 'C 重开后补完', 20000)
   check('C 抠图途中保存并关掉 App，重开后白底图自动补上', true)
   check('总生成调用 = 7（A1 + A2×2 + B×2 + C×2）', genCalls === 7, `genCalls=${genCalls}, chatCalls=${chatCalls}`)
 } catch (e) {
