@@ -121,8 +121,9 @@ export interface AddQueueRow extends AddEntry {
  */
 export interface BgTask {
   itemId: string
-  photo: Blob // 待抠的原图
-  tries: number // 已失败次数（≥3 放弃，详情页仍可手动重抠）
+  photo?: Blob // 待抠的原图；kind='ai' 的识图任务不存图（运行时读衣物主图），避免重复占存储
+  kind?: 'bg' | 'ai' // 默认 bg：补抠白底图；ai：补 AI 识别属性（只填空字段）
+  tries: number // 已失败次数（≥3 放弃）
   createdAt: number
   lastError?: string
 }

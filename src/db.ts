@@ -27,6 +27,10 @@ export async function listItems(): Promise<WardrobeItem[]> {
   return items.sort((a, b) => b.createdAt - a.createdAt)
 }
 
+export async function getItem(id: string): Promise<WardrobeItem | undefined> {
+  return (await db()).get('items', id)
+}
+
 export async function addItem(item: NewItem): Promise<WardrobeItem> {
   const full: WardrobeItem = {
     ...item,

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import * as db from './db'
-import { enqueueBgTask, holdBgTask, onBgTaskSettled, releaseBgTask, resumeBgTasks } from './bgtasks'
+import { enqueueAiTask, enqueueBgTask, holdBgTask, onAiTaskSettled, onBgTaskSettled, releaseBgTask, resumeBgTasks } from './bgtasks'
 import type { AddEntry, NewItem, OutfitRecord, Settings, WardrobeItem } from './types'
 
 interface State {
@@ -11,6 +11,7 @@ interface State {
   addEntries: AddEntry[]
   addCur: number
   bgPending: string[] // 有后台补抠任务在跑/排队的衣物 id（卡片显示「抠图中」）
+  aiPending: string[] // 有后台识图任务在跑/排队的衣物 id（卡片显示「识图中」）
   setAddCur: (i: number) => void
   setAddEntries: (u: AddEntry[] | ((l: AddEntry[]) => AddEntry[])) => void
   load: () => Promise<void>
@@ -25,6 +26,8 @@ interface State {
   enqueueBg: (itemId: string, photo: Blob) => Promise<void>
   /** 保存时抠图还在飞：落占位任务，杀掉 App 后重开也能补上白底图 */
   holdBg: (itemId: string, photo: Blob) => Promise<void>
+  /** 衣柜页「一键识图」：把一件衣服补 AI 识别排进后台队列（只填空字段） */
+  enqueueAi: (itemId: string) => Promise<void>
   /** 在飞抠图回来了：cutout 有图就换主图（null = 原图已是白底），然后清掉占位任务 */
   settleHandoff: (itemId: string, cutout: Blob | null) => Promise<void>
 }
@@ -37,6 +40,7 @@ export const useStore = create<State>((set, get) => ({
   addEntries: [],
   addCur: 0,
   bgPending: [],
+  aiPending: [],
   setAddCur: (i) => set({ addCur: i }),
   setAddEntries: (u) => {
     const prev = get().addEntries
@@ -59,7 +63,15 @@ export const useStore = create<State>((set, get) => ({
       ai: e.ai === 'loading' ? ('idle' as const) : e.ai,
       bg: e.bg === 'loading' ? ('idle' as const) : e.bg,
     }))
-    set({ items, outfits, settings, addEntries, bgPending: bgTasks.map((t) => t.itemId), loaded: true })
+    set({
+      items,
+      outfits,
+      settings,
+      addEntries,
+      bgPending: bgTasks.filter((t) => t.kind !== 'ai').map((t) => t.itemId),
+      aiPending: bgTasks.filter((t) => t.kind === 'ai').map((t) => t.itemId),
+      loaded: true,
+    })
     void resumeBgTasks(settings) // 后台补抠任务续跑
   },
   add: async (item) => {
@@ -106,6 +118,14 @@ export const useStore = create<State>((set, get) => ({
     else set({ bgPending: get().bgPending.filter((id) => id !== itemId) })
     await releaseBgTask(itemId)
   },
+  enqueueAi: async (itemId) => {
+    const s = get().settings
+    if (!s.doubaoApiKey) return // 没 key 不入队（UI 层会先提示）
+    // 补抠任务和识图任务共用 bgTasks（keyPath=itemId），同件只允许一种在飞，避免互相覆盖
+    if (get().bgPending.includes(itemId) || get().aiPending.includes(itemId)) return
+    set({ aiPending: [...get().aiPending, itemId] })
+    await enqueueAiTask(itemId, s)
+  },
 }))
 
 // 后台补抠任务落定：成功换主图（原图存 originalPhoto）；最终落定（含放弃/白底跳过）摘掉「抠图中」
@@ -113,4 +133,23 @@ onBgTaskSettled((itemId, cutout, _err, final) => {
   const s = useStore.getState()
   if (cutout) void s.completeBg(itemId, cutout)
   else if (final) useStore.setState({ bgPending: s.bgPending.filter((id) => id !== itemId) })
+})
+
+// 后台识图任务落定：只补空字段（颜色/风格/材质/品牌），已有内容和分类/季节一律不动；
+// 最终落定（含失败放弃）摘掉「识图中」
+onAiTaskSettled((itemId, guess, _err, final) => {
+  const s = useStore.getState()
+  if (guess) {
+    const it = s.items.find((i) => i.id === itemId)
+    if (it) {
+      void s.update({
+        ...it,
+        colors: it.colors.length ? it.colors : guess.colors ?? [],
+        styles: it.styles.length ? it.styles : guess.styles ?? [],
+        material: it.material ?? guess.material,
+        brand: it.brand ?? guess.brand,
+      })
+    }
+  }
+  if (final) useStore.setState({ aiPending: useStore.getState().aiPending.filter((id) => id !== itemId) })
 })
