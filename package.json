@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test:e2e": "npm run build && node tools/e2e/photo-upload.mjs && node tools/e2e/bg-background.mjs && node tools/e2e/recommend-unit.mjs && node tools/e2e/today-pick.mjs && node tools/e2e/batch-identify.mjs"
+    "test:e2e": "npm run build && node tools/e2e/photo-upload.mjs && node tools/e2e/bg-background.mjs && node tools/e2e/recommend-unit.mjs && node tools/e2e/today-pick.mjs && node tools/e2e/batch-identify.mjs && node tools/e2e/reidentify.mjs"
   },
   "dependencies": {
     "fflate": "^0.8.3",

@@ -26,8 +26,8 @@ let settingsRef: Settings = {}
 type Listener = (itemId: string, cutout: Blob | null, err: string, final: boolean) => void
 let listener: Listener = () => {}
 
-/** 识图落定回调：(itemId, guess, err, final)；guess=null 表示失败/放弃，final=false 表示还会重试 */
-type AiListener = (itemId: string, guess: AiGuess | null, err: string, final: boolean) => void
+/** 识图落定回调：(itemId, guess, err, final, mode)；guess=null 表示失败/放弃，final=false 表示还会重试 */
+type AiListener = (itemId: string, guess: AiGuess | null, err: string, final: boolean, mode: 'fill' | 'overwrite') => void
 let aiListener: AiListener = () => {}
 
 export function onBgTaskSettled(cb: Listener) {
@@ -86,16 +86,16 @@ async function runAiTask(t: BgTask) {
       // 衣服被删了：任务没意义，直接清掉（不重试）
       await db.deleteBgTask(t.itemId)
       scheduled.delete(t.itemId)
-      aiListener(t.itemId, null, '衣服不存在', true)
+      aiListener(t.itemId, null, '衣服不存在', true, t.mode ?? 'fill')
       return
     }
     const guess = await identifyClothing(item.photo, settingsRef)
     if (!guess) throw new Error('未配置豆包 API Key')
     await db.deleteBgTask(t.itemId)
     scheduled.delete(t.itemId)
-    aiListener(t.itemId, guess, '', true)
+    aiListener(t.itemId, guess, '', true, t.mode ?? 'fill')
   } catch (e) {
-    await failTask(t, errText(e), (final) => aiListener(t.itemId, null, t.lastError ?? '', final))
+    await failTask(t, errText(e), (final) => aiListener(t.itemId, null, t.lastError ?? '', final, t.mode ?? 'fill'))
   }
 }
 
@@ -119,10 +119,10 @@ export async function enqueueBgTask(itemId: string, photo: Blob, s: Settings): P
   schedule(t)
 }
 
-/** 衣柜页「一键识图」：给一件衣服补 AI 识别（只填空字段），走同一持久化队列 */
-export async function enqueueAiTask(itemId: string, s: Settings): Promise<void> {
+/** 衣柜页识图：给一件衣服补/重做 AI 识别，走同一持久化队列。mode=fill 只填空字段；overwrite 覆盖已有识别字段 */
+export async function enqueueAiTask(itemId: string, s: Settings, mode: 'fill' | 'overwrite' = 'fill'): Promise<void> {
   settingsRef = s
-  const t: BgTask = { itemId, kind: 'ai', tries: 0, createdAt: Date.now() }
+  const t: BgTask = { itemId, kind: 'ai', mode, tries: 0, createdAt: Date.now() }
   await db.putBgTask(t)
   schedule(t)
 }

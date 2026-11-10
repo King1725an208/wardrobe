@@ -26,8 +26,8 @@ interface State {
   enqueueBg: (itemId: string, photo: Blob) => Promise<void>
   /** 保存时抠图还在飞：落占位任务，杀掉 App 后重开也能补上白底图 */
   holdBg: (itemId: string, photo: Blob) => Promise<void>
-  /** 衣柜页「一键识图」：把一件衣服补 AI 识别排进后台队列（只填空字段） */
-  enqueueAi: (itemId: string) => Promise<void>
+  /** 衣柜页识图：把一件衣服的 AI 识别排进后台队列；mode=fill 只填空字段，overwrite 覆盖已有识别字段 */
+  enqueueAi: (itemId: string, mode?: 'fill' | 'overwrite') => Promise<void>
   /** 在飞抠图回来了：cutout 有图就换主图（null = 原图已是白底），然后清掉占位任务 */
   settleHandoff: (itemId: string, cutout: Blob | null) => Promise<void>
 }
@@ -118,13 +118,13 @@ export const useStore = create<State>((set, get) => ({
     else set({ bgPending: get().bgPending.filter((id) => id !== itemId) })
     await releaseBgTask(itemId)
   },
-  enqueueAi: async (itemId) => {
+  enqueueAi: async (itemId, mode = 'fill') => {
     const s = get().settings
     if (!s.doubaoApiKey) return // 没 key 不入队（UI 层会先提示）
     // 补抠任务和识图任务共用 bgTasks（keyPath=itemId），同件只允许一种在飞，避免互相覆盖
     if (get().bgPending.includes(itemId) || get().aiPending.includes(itemId)) return
     set({ aiPending: [...get().aiPending, itemId] })
-    await enqueueAiTask(itemId, s)
+    await enqueueAiTask(itemId, s, mode)
   },
 }))
 
@@ -135,20 +135,30 @@ onBgTaskSettled((itemId, cutout, _err, final) => {
   else if (final) useStore.setState({ bgPending: s.bgPending.filter((id) => id !== itemId) })
 })
 
-// 后台识图任务落定：只补空字段（颜色/风格/材质/品牌），已有内容和分类/季节一律不动；
-// 最终落定（含失败放弃）摘掉「识图中」
-onAiTaskSettled((itemId, guess, _err, final) => {
+// 后台识图任务落定：fill 模式只补空字段（颜色/风格/材质/品牌），已有内容和分类/季节一律不动；
+// overwrite 模式（「重新识图」）用 AI 结果覆盖分类/季节/颜色/风格/材质/品牌（只覆盖 AI 给出了值的字段，
+// 价格/备注/尺码等手填内容不受影响）；最终落定（含失败放弃）摘掉「识图中」
+onAiTaskSettled((itemId, guess, _err, final, mode) => {
   const s = useStore.getState()
   if (guess) {
     const it = s.items.find((i) => i.id === itemId)
     if (it) {
-      void s.update({
-        ...it,
-        colors: it.colors.length ? it.colors : guess.colors ?? [],
-        styles: it.styles.length ? it.styles : guess.styles ?? [],
-        material: it.material ?? guess.material,
-        brand: it.brand ?? guess.brand,
-      })
+      const patch: Partial<WardrobeItem> = mode === 'overwrite'
+        ? {
+            ...(guess.category ? { category: guess.category } : {}),
+            ...(guess.season ? { season: guess.season } : {}),
+            ...(guess.colors?.length ? { colors: guess.colors } : {}),
+            ...(guess.styles?.length ? { styles: guess.styles } : {}),
+            ...(guess.material ? { material: guess.material } : {}),
+            ...(guess.brand ? { brand: guess.brand } : {}),
+          }
+        : {
+            colors: it.colors.length ? it.colors : guess.colors ?? [],
+            styles: it.styles.length ? it.styles : guess.styles ?? [],
+            material: it.material ?? guess.material,
+            brand: it.brand ?? guess.brand,
+          }
+      void s.update({ ...it, ...patch })
     }
   }
   if (final) useStore.setState({ aiPending: useStore.getState().aiPending.filter((id) => id !== itemId) })
