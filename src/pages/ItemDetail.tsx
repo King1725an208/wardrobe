@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { removeBackground } from '../ai'
 import { hasPlainBackground } from '../image'
 import { useStore } from '../store'
@@ -23,6 +23,38 @@ function EditItem({ item, onDone }: { item: WardrobeItem; onDone: () => void }) 
   const [bgError, setBgError] = useState('')
   const [saving, setSaving] = useState(false)
   const url = useBlobUrl(photo)
+  // 「重新识别」：走后台队列（overwrite），落定后把结果同步进表单
+  const aiPending = useStore((s) => s.aiPending.includes(item.id))
+  const enqueueAi = useStore((s) => s.enqueueAi)
+  const [aiNote, setAiNote] = useState('')
+  const expectAi = useRef(false)
+  const itemAtClick = useRef<WardrobeItem | null>(null)
+
+  const reidentify = () => {
+    if (!settings.doubaoApiKey) {
+      alert('请先在「设置」页配置 API Key')
+      return
+    }
+    if (!confirm('将重新识别这件衣服并覆盖分类/季节/颜色/风格/材质/品牌（价格、备注等手填内容保留）。确定？')) return
+    expectAi.current = true
+    itemAtClick.current = item
+    setAiNote('')
+    void enqueueAi(item.id, 'overwrite')
+  }
+
+  // 识别落定（aiPending 由 true 变 false）时 item 已是最新：同步进表单；失败则提示重试
+  useEffect(() => {
+    if (!expectAi.current || aiPending) return
+    expectAi.current = false
+    if (itemAtClick.current && item !== itemAtClick.current) {
+      setDraft(draftFromItem(item))
+      setManualLv(item.manualWearLevel)
+      setAiNote('已重新识别，结果已填入表单，请核对后点「保存修改」')
+    } else {
+      setAiNote('识别没有返回结果（可能失败了），可以再点一次重试')
+    }
+    itemAtClick.current = null
+  }, [aiPending, item])
 
   const lvLabel = (lv: WearLevel | undefined) => (lv ? WEAR_LEVELS.find((w) => w.key === lv)?.label : '没定义')
   const auto = autoWearLevel(item, settings)
@@ -123,6 +155,12 @@ function EditItem({ item, onDone }: { item: WardrobeItem; onDone: () => void }) 
       {bg !== 'loading' && settings.doubaoApiKey && (
         <button className="link" onClick={refine}>效果不好？AI 精修（约 1 分钟）</button>
       )}
+      {settings.doubaoApiKey && (
+        <button className="link" disabled={aiPending} onClick={reidentify}>
+          {aiPending ? '✨ AI 识别中…' : '✨ 重新识别（覆盖分类/颜色等字段）'}
+        </button>
+      )}
+      {aiNote && <p className="muted">{aiNote}</p>}
       <div className="photo-row">
         <button className="photo-btn" onClick={() => camRef.current?.click()}>📷 重拍</button>
         <button className="photo-btn" onClick={() => galRef.current?.click()}>🖼️ 换一张</button>
@@ -152,7 +190,7 @@ function EditItem({ item, onDone }: { item: WardrobeItem; onDone: () => void }) 
         ))}
       </div>
 
-      <button className="primary" disabled={saving || bg === 'loading'} onClick={save}>
+      <button className="primary" disabled={saving || bg === 'loading' || aiPending} onClick={save}>
         {saving ? '保存中…' : '保存修改'}
       </button>
       <button className="danger" onClick={del}>删除这件衣服</button>
