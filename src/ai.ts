@@ -1,4 +1,5 @@
 import { STANDARD_COLORS, STYLE_TAGS, type Category, type Season, type Settings } from './types'
+import { normalizeCutout } from './image'
 
 export interface AiGuess {
   category?: Category
@@ -193,7 +194,7 @@ export async function removeBackground(photo: Blob, s: Settings): Promise<Blob> 
       },
       body: JSON.stringify({
         model: s.bgModel || 'doubao-seedream-5-0-pro',
-        prompt: '去掉背景，只保留这件衣物/鞋/包，平铺放在纯白色背景正中，保持款式、颜色、细节完全不变，不要添加任何东西',
+        prompt: '去掉背景，只保留这件衣物/鞋/包，让衣物呈熨烫平整、平铺的效果（去除褶皱），放在纯白色背景正中，保持款式、颜色、图案细节完全不变，不要添加任何东西',
         image,
         response_format: 'b64_json',
         size: '1K',
@@ -219,5 +220,6 @@ export async function removeBackground(photo: Blob, s: Settings): Promise<Blob> 
   const bin = atob(b64)
   const bytes = new Uint8Array(bin.length)
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-  return new Blob([bytes], { type: 'image/jpeg' })
+  // 统一画幅：裁掉四周白边、居中等比缩放，保证衣柜格子里所有衣服显示大小一致
+  return normalizeCutout(new Blob([bytes], { type: 'image/jpeg' }))
 }
