@@ -123,6 +123,17 @@ export async function normalizeCutout(blob: Blob): Promise<Blob> {
     octx.fillRect(0, 0, OUT, OUT)
     octx.imageSmoothingQuality = 'high'
     octx.drawImage(cv, cx0, cy0, cw, ch, (OUT - dw) / 2, (OUT - dh) / 2, dw, dh)
+    // 背景强制纯白：Seedream 常留淡灰雾/浅灰块，把接近白色的像素拉到纯白，衣物本体（通常有彩色）不受影响
+    const odata = octx.getImageData(0, 0, OUT, OUT)
+    const px = odata.data
+    for (let i = 0; i < px.length; i += 4) {
+      if (px[i] > 235 && px[i + 1] > 235 && px[i + 2] > 235) {
+        px[i] = 255
+        px[i + 1] = 255
+        px[i + 2] = 255
+      }
+    }
+    octx.putImageData(odata, 0, 0)
     return await new Promise<Blob>((res, rej) =>
       out.toBlob((b) => (b ? res(b) : rej(new Error('toBlob 失败'))), 'image/jpeg', 0.9),
     )

@@ -194,7 +194,7 @@ export async function removeBackground(photo: Blob, s: Settings): Promise<Blob> 
       },
       body: JSON.stringify({
         model: s.bgModel || 'doubao-seedream-5-0-pro',
-        prompt: '去掉背景，只保留这件衣物/鞋/包，让衣物呈熨烫平整、平铺的效果（去除褶皱），放在纯白色背景正中，保持款式、颜色、图案细节完全不变，不要添加任何东西',
+        prompt: '去掉背景，只保留这件衣物/鞋/包，让衣物呈熨烫平整、平铺的效果（去除褶皱），放在纯白色背景正中，背景必须干净纯白，不要有阴影、灰块、渐变或任何杂色，保持款式、颜色、图案细节完全不变，不要添加任何东西',
         image,
         response_format: 'b64_json',
         size: '1K',
