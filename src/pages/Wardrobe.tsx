@@ -5,7 +5,7 @@ import { removeBackground } from '../ai'
 import { findDuplicates } from '../dup'
 import { createPool } from '../pool'
 import {
-  CATEGORIES, MATERIALS, SEASONS, STANDARD_COLORS, STYLE_TAGS, WEAR_LEVELS,
+  CATEGORIES, MATERIALS, SEASONS, STANDARD_COLORS, STYLE_TAGS, SUBTYPES, WEAR_LEVELS,
   type Category, type WearLevel,
 } from '../types'
 import { useBlobUrl } from '../useBlobUrl'
@@ -22,6 +22,7 @@ function Card({ item, onOpen }: { item: WardrobeItem; onOpen: (id: string) => vo
   const lv = wearLevel(item, settings)
   const lvLabel = lv ? WEAR_LEVELS.find((w) => w.key === lv)!.label : '没定义'
   const catLabel = CATEGORIES.find((c) => c.key === item.category)?.label ?? item.category
+  const subLabel = item.subtype ? SUBTYPES[item.category]?.find((x) => x.key === item.subtype)?.label : undefined
 
   const set = (p: Partial<WardrobeItem>) => update({ ...item, ...p })
   const pick = (k: TagKey) => setOpen((o) => (o === k ? null : k))
@@ -50,6 +51,7 @@ function Card({ item, onOpen }: { item: WardrobeItem; onOpen: (id: string) => vo
         </div>
         <div className="tags">
           {tag('category', catLabel)}
+          {subLabel && <span className="tag tag-sub">{subLabel}</span>}
           {tag('season', item.season)}
           {item.purchasedAt && <span className="tag">{item.purchasedAt.slice(0, 4)}年</span>}
           {item.colors.length ? item.colors.map((c) => tag('color', c)) : tag('color', '＋颜色', 'tag-add')}
@@ -125,6 +127,7 @@ export default function Wardrobe({ onOpen }: { onOpen: (id: string) => void }) {
   const { items, settings, update, aiPending, enqueueAi } = useStore()
   const bgPending = useStore((s) => s.bgPending) // 去背景任务在飞的衣服：识图任务与之互斥，计数里排除
   const [cat, setCat] = useState<Category | 'all'>('all')
+  const [sub, setSub] = useState<string>('all')
   const [season, setSeason] = useState<string>('all')
   const [style, setStyle] = useState<string>('all')
   const [lv, setLv] = useState<WearLevel | 'all' | 'none'>('all')
@@ -146,6 +149,7 @@ export default function Wardrobe({ onOpen }: { onOpen: (id: string) => void }) {
     }
     let list = items
     if (cat !== 'all') list = list.filter((i) => i.category === cat)
+    if (sub !== 'all') list = list.filter((i) => i.subtype === sub)
     if (rawOnly) list = list.filter((i) => !i.originalPhoto) // 没有原图备份 = 没去背景
     if (season !== 'all') list = list.filter((i) => i.season === season)
     if (style !== 'all') list = list.filter((i) => i.styles.includes(style))
@@ -165,7 +169,7 @@ export default function Wardrobe({ onOpen }: { onOpen: (id: string) => void }) {
       if (sort === 'price') return (b.price ?? 0) - (a.price ?? 0)
       return b.createdAt - a.createdAt
     })
-  }, [items, cat, season, style, lv, q, sort, settings, rawOnly, dupIds])
+  }, [items, cat, sub, season, style, lv, q, sort, settings, rawOnly, dupIds])
 
   // 批量去背景：并发池(2) 调 Seedream（P2-3，比串行快一倍），成功后主图换成白底图、原图存进 originalPhoto
   const batchRemoveBg = async () => {
@@ -307,11 +311,19 @@ export default function Wardrobe({ onOpen }: { onOpen: (id: string) => void }) {
       <div className="cats">
         <button className={cat === 'all' ? 'on' : ''} onClick={() => setCat('all')}>全部</button>
         {CATEGORIES.map((c) => (
-          <button key={c.key} className={cat === c.key ? 'on' : ''} onClick={() => setCat(c.key)}>
+          <button key={c.key} className={cat === c.key ? 'on' : ''} onClick={() => { setCat(c.key); setSub('all') }}>
             {c.label}
           </button>
         ))}
       </div>
+      {cat !== 'all' && SUBTYPES[cat] && (
+        <div className="cats">
+          <button className={sub === 'all' ? 'on' : ''} onClick={() => setSub('all')}>全部子类</button>
+          {SUBTYPES[cat].map((x) => (
+            <button key={x.key} className={sub === x.key ? 'on' : ''} onClick={() => setSub(x.key)}>{x.label}</button>
+          ))}
+        </div>
+      )}
       <div className="filters">
         <select value={season} onChange={(e) => setSeason(e.target.value)}>
           <option value="all">季节</option>
