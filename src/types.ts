@@ -133,7 +133,8 @@ export interface OutfitRecord {
   date: string // YYYY-MM-DD
   photo?: Blob
   itemIds: string[]
-  note?: string
+  note?: string // 感想/一句话
+  weather?: string // 记录当天的天气快照（存时的天气，之后不变）
   createdAt: number
   userId?: string
   syncedAt?: number

@@ -269,6 +269,7 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .rec-photo .rec-btns { margin-top: 8px; }
 .rec-add-photo { margin-top: 12px; padding: 14px 0; }
 .rec-note { margin-top: 10px; width: 100%; }
+textarea.rec-note { resize: vertical; min-height: 2.4em; font-family: inherit; }
 
 .rec-tile { position: relative; }
 .tile-tip {

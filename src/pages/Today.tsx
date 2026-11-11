@@ -35,7 +35,7 @@ function BreakdownItem({ item }: { item: WardrobeItem }) {
   )
 }
 
-function OutfitCard({ rec }: { rec: OutfitRecord }) {
+function OutfitCard({ rec, today }: { rec: OutfitRecord; today?: boolean }) {
   const url = useBlobUrl(rec.photo)
   const { items } = useStore()
   const [open, setOpen] = useState(false)
@@ -48,8 +48,8 @@ function OutfitCard({ rec }: { rec: OutfitRecord }) {
   return (
     <div className="outfit" onClick={() => setOpen(!open)}>
       <div className="outfit-head">
-        <span className="outfit-date">{rec.date}</span>
-        <span className="muted">{open ? '收起' : '展开拆解'}</span>
+        <span className="outfit-date">{rec.date}{today ? ' · 今天' : ''}</span>
+        <span className="muted">{rec.weather ?? ''} {open ? '收起' : '展开拆解'}</span>
       </div>
       {open ? (
         <div className="breakdown">
@@ -87,7 +87,7 @@ export default function Today() {
   const date = today()
   const ctx = useMemo<RecCtx>(() => ({ date, weather, day, outfits, settings }), [date, weather, day, outfits, settings])
 
-  // 照片、衣服、一句话都存在今天这一条记录里；去掉的衣服撤回今天那次穿着次数
+  // 照片、衣服、感想、当天天气都存在今天这一条记录里；去掉的衣服撤回今天那次穿着次数
   const save = async (ids: string[], photo: Blob | undefined, note: string) => {
     const rec: OutfitRecord = {
       id: existing?.id ?? crypto.randomUUID(),
@@ -95,6 +95,8 @@ export default function Today() {
       photo,
       itemIds: ids,
       note: note || undefined,
+      // 天气在第一次保存时快照下来，之后改衣服/照片/感想不会被当天的新天气覆盖
+      weather: existing?.weather ?? (weather ? `${weather.temp}° ${weather.text} · ${weather.min}~${weather.max}°C${weather.rainy ? ' · 有雨' : ''}` : undefined),
       createdAt: existing?.createdAt ?? Date.now(),
     }
     await saveOutfit(rec)
@@ -110,8 +112,8 @@ export default function Today() {
       <TodayPick ctx={ctx} existing={existing} onSave={save} />
 
       <h2>历史记录</h2>
-      {outfits.filter((o) => o.date !== date).map((o) => (
-        <OutfitCard key={o.id} rec={o} />
+      {outfits.map((o) => (
+        <OutfitCard key={o.id} rec={o} today={o.date === date} />
       ))}
     </div>
   )

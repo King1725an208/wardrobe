@@ -236,7 +236,7 @@ export default function TodayPick({
           📸 加一张今天的照片（拍照或相册）
         </button>
       )}
-      <input className="rec-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="一句话（可不填）：今天去…" />
+      <textarea className="rec-note" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="感想（可不填）：今天穿着感觉、去了哪、天气如何…" />
 
       <div className="rec-btns">
         <button className="photo-btn" onClick={another}>🔄 换一套</button>
