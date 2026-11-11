@@ -14,30 +14,30 @@ interface DemoSpec {
 const DEMO: DemoSpec[] = [
   {
     file: 'tshirt.jpg',
-    item: { category: 'top', brand: '优衣库', price: 99, colors: ['白'], styles: ['休闲'], season: '夏' },
+    item: { category: 'top', subtype: 'tee_polo', brand: '优衣库', price: 99, colors: ['白'], styles: ['休闲'], season: '夏' },
     wearCount: 5,
     lastWornDaysAgo: 3,
   },
   {
     file: 'jeans.jpg',
-    item: { category: 'bottom', brand: 'UR', price: 259, colors: ['浅蓝'], styles: ['休闲', '通勤'], season: '春秋' },
+    item: { category: 'bottom', subtype: 'long_thin', brand: 'UR', price: 259, colors: ['浅蓝'], styles: ['休闲', '通勤'], season: '春秋' },
     wearCount: 4,
     lastWornDaysAgo: 8,
   },
   {
     file: 'cardigan.jpg',
-    item: { category: 'outerwear', price: 329, colors: ['米色'], styles: ['通勤', '甜美'], season: '春秋', material: '针织' },
+    item: { category: 'outerwear', subtype: 'thin', price: 329, colors: ['米色'], styles: ['通勤', '甜美'], season: '春秋', material: '针织' },
     wearCount: 1,
     lastWornDaysAgo: 60,
   },
   {
     file: 'dress.jpg',
-    item: { category: 'dress', price: 459, colors: ['碎花'], styles: ['甜美', '度假'], season: '夏' },
+    item: { category: 'dress', subtype: 'short', price: 459, colors: ['碎花'], styles: ['甜美', '度假'], season: '夏' },
     wearCount: 0,
   },
   {
     file: 'sneakers.jpg',
-    item: { category: 'shoes', price: 569, colors: ['白'], styles: ['休闲', '运动'], season: '春秋' },
+    item: { category: 'shoes', subtype: 'casual', price: 569, colors: ['白'], styles: ['休闲', '运动'], season: '春秋' },
     wearCount: 6,
     lastWornDaysAgo: 1,
   },
