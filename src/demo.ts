@@ -51,7 +51,12 @@ function dateStr(daysAgo: number): string {
 export async function importDemoData(): Promise<number> {
   const existing = await db.listItems()
   if (existing.some((i) => i.note === 'demo')) {
-    // 已导入过：给旧示例穿搭补齐 开衫+鞋，方便看拆解图
+    // 已导入过：给旧示例补子类（旧版本导入的没有），并给旧示例穿搭补齐 开衫+鞋
+    for (const o of existing) {
+      if (o.note !== 'demo' || o.subtype) continue
+      const d = DEMO.find((x) => x.item.category === o.category && x.item.brand === o.brand)
+      if (d?.item.subtype) await db.updateItem({ ...o, subtype: d.item.subtype })
+    }
     const idOf = (n: number) => existing.find((i) => i.note === 'demo' && i.brand === ['优衣库', 'UR', 'UR', 'UR', '优衣库'][n] && i.category === ['top', 'bottom', 'outerwear', 'dress', 'shoes'][n])?.id
     const outfits = await db.listOutfits()
     for (const o of outfits) {

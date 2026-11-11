@@ -1,4 +1,4 @@
-import { BRANDS, CATEGORIES, MATERIALS, PRICE_RANGES, SEASONS, STANDARD_COLORS, STYLE_TAGS } from '../types'
+import { BRANDS, CATEGORIES, MATERIALS, PRICE_RANGES, SEASONS, STANDARD_COLORS, STYLE_TAGS, SUBTYPES } from '../types'
 import type { Draft } from '../draft'
 
 const SPLIT = /[\s,，/、]+/
@@ -25,11 +25,25 @@ export default function ItemForm({ value, onChange }: { value: Draft; onChange: 
       <label>分类</label>
       <div className="chips">
         {CATEGORIES.map((c) => (
-          <button key={c.key} className={value.category === c.key ? 'on' : ''} onClick={() => set('category', c.key)}>
+          <button key={c.key} className={value.category === c.key ? 'on' : ''}
+            onClick={() => onChange({ ...value, category: c.key, subtype: undefined })}>
             {c.label}
           </button>
         ))}
       </div>
+
+      {SUBTYPES[value.category] && (
+        <>
+          <label>子类</label>
+          <div className="chips">
+            {SUBTYPES[value.category]!.map((x) => (
+              <button key={x.key} className={value.subtype === x.key ? 'on' : ''} onClick={() => set('subtype', value.subtype === x.key ? undefined : x.key)}>
+                {x.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
       <label>季节</label>
       <div className="chips">
