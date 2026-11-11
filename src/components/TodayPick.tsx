@@ -3,48 +3,57 @@ import { useStore } from '../store'
 import { useBlobUrl } from '../useBlobUrl'
 import { wearLevel } from '../frequency'
 import { normalizePhotoFile } from '../photoFile'
-import { CATEGORIES, SUBTYPES, WEAR_LEVELS } from '../types'
+import { CATEGORIES, SUBTYPES, subtypeLabel, WEAR_LEVELS } from '../types'
 import type { Category, OutfitRecord, WardrobeItem } from '../types'
 import { compose, missingHint, rank, reasonsFor, recIds, SLOT_ORDER, type Rec, type RecCtx, type Slot } from '../recommend'
 
 const ROWS: Category[] = ['outerwear', 'top', 'dress', 'bottom', 'shoes', 'bag', 'accessory']
 const label = (c: Category) => CATEGORIES.find((x) => x.key === c)?.label ?? c
 
-function Tile({ item, on, onTap }: { item: WardrobeItem; on: boolean; onTap: (it: WardrobeItem) => void }) {
+/** 品牌 + 子类 + 备注 的一行小字，卡片和选项里共用 */
+function metaOf(item: WardrobeItem): string {
+  const sub = subtypeLabel(item.category, item.subtype)
+  const parts = [item.brand, sub].filter(Boolean)
+  return parts.join(' · ')
+}
+
+/** 收起态的分类卡：当前穿的那一件 */
+function PickCard({ cat, item, on, onOpen, count, selIds }: { cat: Category; item?: WardrobeItem; on: boolean; onOpen: () => void; count?: number; selIds: string[] }) {
+  const url = useBlobUrl(item?.photo)
+  return (
+    <button className={`outfit-card ${on ? 'on' : ''}`} data-cat={cat} data-ids={selIds.join(' ')} onClick={onOpen}>
+      {item ? (
+        <>
+          <span className="oc-img">{url && <img src={url} alt="" />}</span>
+          <span className="oc-info">
+            <span className="oc-title">{label(cat)} · {metaOf(item) || '未命名'}</span>
+            {item.note && <span className="oc-note">备注：{item.note}</span>}
+            <span className="oc-sub">点我换一件 ›</span>
+          </span>
+        </>
+      ) : (
+        <span className="oc-empty">＋ 选{label(cat)}{count ? `（已选 ${count} 件）` : ''}</span>
+      )}
+    </button>
+  )
+}
+
+/** 展开态里的一件候选：图 + 品牌子类 + 备注，点了就换 */
+function PickOption({ item, on, onTap }: { item: WardrobeItem; on: boolean; onTap: (it: WardrobeItem) => void }) {
   const url = useBlobUrl(item.photo)
   const { settings } = useStore()
   const lv = wearLevel(item, settings)
-  // 方案A：桌面悬停 / 手机长按 0.5s 显示品牌+备注，方便认照片
-  const [tip, setTip] = useState(false)
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const hasTip = !!(item.brand || item.note)
-  const startPress = () => {
-    if (!hasTip) return
-    timer.current = setTimeout(() => setTip(true), 500)
-  }
-  const endPress = () => {
-    if (timer.current) { clearTimeout(timer.current); timer.current = null }
-  }
   return (
-    <button
-      className={`rec-tile ${on ? 'on' : ''}`} data-id={item.id} data-cat={item.category}
-      onClick={() => onTap(item)}
-      onMouseEnter={() => hasTip && setTip(true)}
-      onMouseLeave={() => setTip(false)}
-      onTouchStart={startPress}
-      onTouchEnd={endPress}
-      onTouchMove={endPress}
-      onTouchCancel={endPress}
-    >
-      {url && <img src={url} alt="" />}
-      {on && <span className="tick">✓</span>}
-      {lv && lv !== 'often' && <span className={`badge lv-${lv}`}>{WEAR_LEVELS.find((w) => w.key === lv)?.label}</span>}
-      {tip && hasTip && (
-        <span className="tile-tip" onClick={(e) => e.stopPropagation()}>
-          {item.brand && <b>{item.brand}</b>}
-          {item.note && <span>{item.note}</span>}
-        </span>
-      )}
+    <button className={`pick-option ${on ? 'on' : ''}`} data-id={item.id} onClick={() => onTap(item)}>
+      <span className="po-img">
+        {url && <img src={url} alt="" />}
+        {on && <span className="tick">✓</span>}
+        {lv && lv !== 'often' && <span className={`badge lv-${lv}`}>{WEAR_LEVELS.find((w) => w.key === lv)?.label}</span>}
+      </span>
+      <span className="po-meta">
+        <b>{metaOf(item) || '未命名'}</b>
+        {item.note && <span className="po-note">{item.note}</span>}
+      </span>
     </button>
   )
 }
@@ -76,7 +85,8 @@ export default function TodayPick({
   const [seed, setSeed] = useState(0)
   const [avoid, setAvoid] = useState<Set<string>>(new Set())
   const [sel, setSel] = useState<string[] | null>(null) // null = 跟着推荐/今天的记录
-  const [openSub, setOpenSub] = useState<Partial<Record<Category, string>>>({}) // 版本2：点进的子类
+  const [openCat, setOpenCat] = useState<Category | null>(null) // 方案C：当前展开换衣的分类
+  const [openSub, setOpenSub] = useState<string | undefined>(undefined) // 展开态里点进的子类
   const [note, setNote] = useState(existing?.note ?? '')
   const [busy, setBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -84,18 +94,20 @@ export default function TodayPick({
   const rk = useMemo(() => rank(items, ctx, seed), [items, ctx, seed])
   const base = useMemo(() => compose(rk, ctx, seed, avoid), [rk, ctx, seed, avoid])
   const worn = existing?.itemIds
-  // 推荐（或今天记下的）那几件，排在每行最前面
+  // 推荐（或今天记下的）那几件，排在候选最前面
   const anchor = useMemo(() => (seed === 0 && worn?.length ? worn : base ? recIds(base) : []), [seed, worn, base])
   const ids = (sel ?? anchor).filter((id) => items.some((i) => i.id === id))
 
+  // 每个分类：候选列表（推荐的在前）+ 当前选中的
   const rows = useMemo(
     () =>
       ROWS.map((cat) => {
         const ranked = (SLOT_ORDER as string[]).includes(cat) ? rk.bySlot[cat as Slot] : []
         const list = [...ranked, ...items.filter((i) => i.category === cat && !ranked.includes(i))]
-        return { cat, list: [...list.filter((i) => anchor.includes(i.id)), ...list.filter((i) => !anchor.includes(i.id))] }
+        const ordered = [...list.filter((i) => anchor.includes(i.id)), ...list.filter((i) => !anchor.includes(i.id))]
+        return { cat, list: ordered, picked: ordered.filter((i) => ids.includes(i.id)) }
       }).filter((r) => r.list.length > 0),
-    [items, rk, anchor],
+    [items, rk, anchor, ids],
   )
 
   if (!items.length) return <div className="rec rec-empty">👗 {missingHint(items, ctx)}</div>
@@ -121,6 +133,7 @@ export default function TodayPick({
     setAvoid(new Set(ids))
     setSeed(seed + 1)
     setSel(null)
+    setOpenCat(null)
   }
   const wear = () => run(() => onSave(ids, existing?.photo, note.trim()))
   // 照片选好就存进今天这条记录（还没选衣服也先存上）
@@ -138,49 +151,69 @@ export default function TodayPick({
     if (confirm('删掉今天这张照片？')) void run(() => onSave(existing?.itemIds ?? [], undefined, existing?.note ?? ''))
   }
 
+  // 点候选：配饰可多选留在展开态；其余选完收起卡片
+  const pick = (it: WardrobeItem) => {
+    setSel(toggle(ids, it, items))
+    if (it.category !== 'accessory') {
+      setOpenCat(null)
+      setOpenSub(undefined)
+    }
+  }
+
+  const open = rows.find((r) => r.cat === openCat)
+  const subs = open
+    ? SUBTYPES[open.cat]?.map((x) => ({ ...x, list: open.list.filter((i) => i.subtype === x.key) })).filter((x) => x.list.length > 0) ?? []
+    : []
+  const options = open ? (openSub ? open.list.filter((i) => i.subtype === openSub) : subs.length ? [] : open.list) : []
+
   return (
     <div className="rec">
       <div className="rec-head">
         <b>今天穿这套</b>
-        <span className="muted">点同一行的别的衣服就换掉</span>
+        <span className="muted">点卡片换衣服，品牌备注都写在图下面</span>
       </div>
       {!base && <div className="muted">👗 {missingHint(items, ctx)}</div>}
-      {rows.map((r) => {
-        const subs = SUBTYPES[r.cat]?.map((x) => ({ ...x, list: r.list.filter((i) => i.subtype === x.key) })).filter((x) => x.list.length > 0) ?? []
-        const cur = openSub[r.cat]
-        const shown = cur ? r.list.filter((i) => i.subtype === cur) : r.list
-        return (
-          <div className="pick-row" key={r.cat} data-cat={r.cat}>
-            <div className="pick-row-head">
+
+      {rows.map((r) =>
+        openCat === r.cat ? (
+          <div className="outfit-card open" key={r.cat} data-cat={r.cat}>
+            <div className="oc-bar">
               <b>{label(r.cat)}</b>
-              <span className="muted">{cur ? `${SUBTYPES[r.cat]?.find((x) => x.key === cur)?.label ?? ''} · ${shown.length} 件` : `${r.list.length} 件`}</span>
+              <button className="oc-close" onClick={() => { setOpenCat(null); setOpenSub(undefined) }}>‹ 收起</button>
             </div>
-            {subs.length > 0 && !cur && (
+            {subs.length > 0 && !openSub && (
               <div className="sub-grid">
                 {subs.map((x) => (
-                  <button key={x.key} className="sub-tile" data-sub={x.key} onClick={() => setOpenSub((o) => ({ ...o, [r.cat]: x.key }))}>
-                    <span className="sub-stack">
-                      {x.list.slice(0, 4).map((it) => <SubThumb key={it.id} item={it} />)}
-                    </span>
+                  <button key={x.key} className="sub-tile" data-sub={x.key} onClick={() => setOpenSub(x.key)}>
+                    <span className="sub-stack">{x.list.slice(0, 4).map((it) => <SubThumb key={it.id} item={it} />)}</span>
                     <span className="sub-name">{x.label}</span>
                     <span className="sub-count">{x.list.length} 件</span>
                   </button>
                 ))}
               </div>
             )}
-            {(shown.length > 0 || subs.length === 0) && (
-              <div className="pick-strip">
-                {cur && (
-                  <button className="sub-back" onClick={() => setOpenSub((o) => ({ ...o, [r.cat]: undefined }))}>‹ {label(r.cat)}</button>
-                )}
-                {shown.map((it) => (
-                  <Tile key={it.id} item={it} on={ids.includes(it.id)} onTap={(x) => setSel(toggle(ids, x, items))} />
+            {(options.length > 0 || subs.length === 0) && (
+              <div className="pick-options">
+                {openSub && <button className="sub-back" onClick={() => setOpenSub(undefined)}>‹ {label(r.cat)}</button>}
+                {(openSub ? options : open!.list).map((it) => (
+                  <PickOption key={it.id} item={it} on={ids.includes(it.id)} onTap={(x) => pick(x)} />
                 ))}
               </div>
             )}
           </div>
-        )
-      })}
+        ) : (
+          <PickCard
+            key={r.cat}
+            cat={r.cat}
+            item={r.picked[0]}
+            on={r.picked.length > 0}
+            count={r.picked.length}
+            selIds={r.picked.map((i) => i.id)}
+            onOpen={() => { setOpenCat(r.cat); setOpenSub(undefined) }}
+          />
+        ),
+      )}
+
       {reasons.length > 0 && (
         <div className="chips rec-why">
           {reasons.map((r) => (
