@@ -14,6 +14,58 @@ export const CATEGORIES: { key: Category; label: string }[] = [
 export const SEASONS = ['夏', '春秋', '冬'] as const
 export type Season = (typeof SEASONS)[number]
 
+/** 子类（按保暖程度）：category → 子类 key → 中文名 / 保暖分（1薄 ~ 3厚，越大越保暖；无 = 0） */
+export const SUBTYPES: Partial<Record<Category, { key: string; label: string; warm: number }[]>> = {
+  top: [
+    { key: 'tee_polo', label: '短袖 T恤/Polo', warm: 1 },
+    { key: 'shirt', label: '衬衣', warm: 1 },
+    { key: 'long_tee', label: '长袖 T恤', warm: 2 },
+    { key: 'hoodie', label: '长袖卫衣', warm: 2 },
+    { key: 'knit', label: '长袖毛衣', warm: 3 },
+    { key: 'other_long', label: '其他长袖', warm: 2 },
+  ],
+  bottom: [
+    { key: 'shorts', label: '短裤', warm: 1 },
+    { key: 'long_thin', label: '长裤（薄）', warm: 1 },
+    { key: 'long_thick', label: '长裤（厚）', warm: 2 },
+    { key: 'skirt', label: '半身裙', warm: 1 },
+  ],
+  outerwear: [
+    { key: 'thin', label: '薄外套', warm: 1 },
+    { key: 'thick', label: '厚外套', warm: 2 },
+  ],
+  dress: [
+    { key: 'short', label: '短袖/无袖', warm: 1 },
+    { key: 'long', label: '长袖', warm: 2 },
+    { key: 'knit', label: '针织/毛衣裙', warm: 3 },
+  ],
+  shoes: [
+    { key: 'sport', label: '运动鞋', warm: 1 },
+    { key: 'casual', label: '休闲鞋', warm: 1 },
+    { key: 'boots', label: '靴子', warm: 3 },
+    { key: 'sandal', label: '凉鞋/拖鞋', warm: 0 },
+  ],
+  bag: [
+    { key: 'commute', label: '通勤', warm: 0 },
+    { key: 'casual', label: '休闲', warm: 0 },
+    { key: 'travel', label: '度假', warm: 0 },
+  ],
+  accessory: [{ key: 'hat', label: '帽子', warm: 0 }, { key: 'scarf', label: '围巾/披肩', warm: 1 }, { key: 'belt', label: '腰带', warm: 0 }, { key: 'glasses', label: '眼镜', warm: 0 }, { key: 'other', label: '其他', warm: 0 }],
+}
+
+export const subtypeLabel = (category: Category, key?: string) => {
+  if (!key) return ''
+  return SUBTYPES[category]?.find((s) => s.key === key)?.label ?? ''
+}
+/** 保暖分：子类没填时按季节兜底（冬=2、夏=1、春秋=1） */
+export function warmth(item: Pick<WardrobeItem, 'category' | 'subtype' | 'season'>): number {
+  const s = item.subtype ? SUBTYPES[item.category]?.find((x) => x.key === item.subtype) : undefined
+  if (s) return s.warm
+  if (item.category === 'outerwear') return 2
+  if (item.category === 'bag' || item.category === 'accessory') return 0
+  return item.season === '冬' ? 2 : 1
+}
+
 export const STYLE_TAGS = ['通勤', '休闲', '运动', '甜美', '正式', '度假'] as const
 
 /** 与 AI 识别提示词约定的标准色表（ai.ts 校验过滤、衣柜页颜色快捷选项共用） */
@@ -55,6 +107,7 @@ export interface WardrobeItem {
   photo: Blob
   originalPhoto?: Blob // 去背景前的原图
   category: Category
+  subtype?: string // 子类 key（见 SUBTYPES），旧数据为空
   brand?: string
   purchasedAt?: string // 购买年份 YYYY（旧数据可能是 YYYY-MM）
   price?: number
