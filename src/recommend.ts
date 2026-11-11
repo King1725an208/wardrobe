@@ -1,5 +1,5 @@
 import { wearLevel } from './frequency'
-import { CATEGORIES } from './types'
+import { CATEGORIES, warmth } from './types'
 import type { Category, OutfitRecord, Season, Settings, WardrobeItem } from './types'
 import type { DayInfo, Weather } from './weather'
 
@@ -50,6 +50,15 @@ export function targetSeason(ctx: RecCtx): Season {
   return hi >= 26 ? '夏' : hi <= 14 ? '冬' : '春秋'
 }
 
+/** 按今天最高温估计「想要的保暖度」0-3：越热越低 */
+export function targetWarmth(ctx: RecCtx): number {
+  const hi = todayHigh(ctx)
+  if (hi >= 30) return 0
+  if (hi >= 25) return 1
+  if (hi >= 18) return 2
+  return 3
+}
+
 export function needOuter(ctx: RecCtx): boolean {
   const hi = todayHigh(ctx)
   return hi <= 20 || (!!ctx.weather?.rainy && hi <= 24)
@@ -86,6 +95,12 @@ function scoreOf(item: WardrobeItem, ctx: RecCtx, yesterday: Set<string>, recent
   if (item.styles.some((x) => want.includes(x))) s += 2
   const lv = wearLevel(item, ctx.settings, new Date(ctx.date + 'T12:00:00').getTime())
   s += lv === 'never' ? 3 : lv === undefined ? 2.5 : lv === 'rarely' ? 1.5 : 0
+  // 保暖度贴合今天温度：差 1 档扣 1.5，差 2 档以上扣 3（外套/包/配饰不参与）
+  if (!['outerwear', 'bag', 'accessory'].includes(item.category)) {
+    const d = Math.abs(warmth(item) - targetWarmth(ctx))
+    if (d >= 2) s -= 3
+    else if (d === 1) s -= 1.5
+  }
   if (yesterday.has(item.id)) s -= 6
   else if (recent.has(item.id)) s -= 2
   if (ctx.weather?.rainy && ['bottom', 'shoes', 'outerwear', 'dress'].includes(item.category)) {
