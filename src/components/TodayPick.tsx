@@ -17,24 +17,104 @@ function metaOf(item: WardrobeItem): string {
   return parts.join(' · ')
 }
 
-/** 收起态的分类卡：当前穿的那一件 */
-function PickCard({ cat, item, on, onOpen, count, selIds }: { cat: Category; item?: WardrobeItem; on: boolean; onOpen: () => void; count?: number; selIds: string[] }) {
-  const url = useBlobUrl(item?.photo)
+function OcThumb({ item }: { item: WardrobeItem }) {
+  const url = useBlobUrl(item.photo)
+  return url ? <img src={url} alt="" /> : null
+}
+
+/** 收起态的分类卡：当前穿的那几件（上衣可叠穿多件，带 ＋/－ 控件） */
+function PickCard({
+  cat,
+  items,
+  on,
+  onOpen,
+  count,
+  selIds,
+  onAdd,
+  onRemove,
+  canAdd = true,
+  canRemove = true,
+}: {
+  cat: Category
+  items: WardrobeItem[]
+  on: boolean
+  onOpen: () => void
+  count?: number
+  selIds: string[]
+  onAdd?: () => void
+  onRemove?: () => void
+  canAdd?: boolean
+  canRemove?: boolean
+}) {
+  const first = items[0]
+  const url = useBlobUrl(items.length === 1 ? first?.photo : undefined)
+  const multi = items.length > 1
   return (
-    <button className={`outfit-card ${on ? 'on' : ''}`} data-cat={cat} data-ids={selIds.join(' ')} onClick={onOpen}>
-      {item ? (
+    <div
+      className={`outfit-card ${on ? 'on' : ''}`}
+      data-cat={cat}
+      data-ids={selIds.join(' ')}
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onOpen()
+        }
+      }}
+    >
+      {first ? (
         <>
-          <span className="oc-img">{url && <img src={url} alt="" />}</span>
+          {multi ? (
+            <span className="oc-stack">
+              {items.slice(0, 3).map((it) => (
+                <OcThumb key={it.id} item={it} />
+              ))}
+            </span>
+          ) : (
+            <span className="oc-img">{url && <img src={url} alt="" />}</span>
+          )}
           <span className="oc-info">
-            <span className="oc-title">{label(cat)} · {metaOf(item) || '未命名'}</span>
-            {item.note && <span className="oc-note">备注：{item.note}</span>}
+            <span className="oc-title">{label(cat)} · {multi ? `${items.length} 件叠穿` : metaOf(first) || '未命名'}</span>
+            {!multi && first.note && <span className="oc-note">备注：{first.note}</span>}
             <span className="oc-sub">点我换一件 ›</span>
           </span>
+          {cat === 'top' && onAdd && onRemove && (
+            <span className="oc-ctl">
+              <button
+                type="button"
+                className="oc-step"
+                data-act="add"
+                disabled={!canAdd}
+                title="加一件上衣"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onAdd()
+                }}
+              >
+                ＋
+              </button>
+              <button
+                type="button"
+                className="oc-step"
+                data-act="remove"
+                disabled={!canRemove}
+                title="减一件上衣"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onRemove()
+                }}
+              >
+                －
+              </button>
+            </span>
+          )}
         </>
       ) : (
         <span className="oc-empty">＋ 选{label(cat)}{count ? `（已选 ${count} 件）` : ''}</span>
       )}
-    </button>
+    </div>
   )
 }
 
@@ -63,12 +143,18 @@ function SubThumb({ item }: { item: WardrobeItem }) {
   return <span className="sub-thumb">{url && <img src={url} alt="" />}</span>
 }
 
-/** 选一件：同一类只留一件（配饰可多选）；连衣裙和上衣/下装互斥 */
+const MAX_TOPS = 4 // 一天最多叠穿 4 件上衣
+
+/** 选一件：上衣/配饰可多选（上衣叠穿），其余同类只留一件；连衣裙和上衣/下装互斥 */
 function toggle(ids: string[], it: WardrobeItem, items: WardrobeItem[]): string[] {
   if (ids.includes(it.id)) return ids.filter((x) => x !== it.id)
   if (it.category === 'accessory') return [...ids, it.id]
+  if (it.category === 'top') {
+    // 上衣可叠穿多件，但连衣裙互斥
+    return [...ids.filter((x) => items.find((i) => i.id === x)?.category !== 'dress'), it.id]
+  }
   const clash: Category[] =
-    it.category === 'dress' ? ['dress', 'top', 'bottom'] : it.category === 'top' || it.category === 'bottom' ? [it.category, 'dress'] : [it.category]
+    it.category === 'dress' ? ['dress', 'top', 'bottom'] : it.category === 'bottom' ? ['bottom', 'dress'] : [it.category]
   return [...ids.filter((x) => !clash.includes(items.find((i) => i.id === x)?.category as Category)), it.id]
 }
 
@@ -151,10 +237,26 @@ export default function TodayPick({
     if (confirm('删掉今天这张照片？')) void run(() => onSave(existing?.itemIds ?? [], undefined, existing?.note ?? ''))
   }
 
-  // 点候选：配饰可多选留在展开态；其余选完收起卡片
+  // 上衣叠穿：当前选中的上衣（按选择顺序）
+  const topIds = ids.filter((id) => items.find((i) => i.id === id)?.category === 'top')
+  // ＋：一键加一件最合适的上衣，不用打开选衣卡
+  const addTop = () => {
+    if (topIds.length >= MAX_TOPS) return
+    const row = rows.find((r) => r.cat === 'top')
+    const next = row?.list.find((i) => i.category === 'top' && !ids.includes(i.id))
+    if (next) setSel(toggle(ids, next, items))
+  }
+  // －：减一件，去掉最后加的那件
+  const removeTop = () => {
+    const last = topIds[topIds.length - 1]
+    if (last) setSel(ids.filter((x) => x !== last))
+  }
+
+  // 点候选：上衣/配饰可多选留在展开态；其余选完收起卡片
   const pick = (it: WardrobeItem) => {
+    if (it.category === 'top' && !ids.includes(it.id) && topIds.length >= MAX_TOPS) return
     setSel(toggle(ids, it, items))
-    if (it.category !== 'accessory') {
+    if (it.category !== 'accessory' && it.category !== 'top') {
       setOpenCat(null)
       setOpenSub(undefined)
     }
@@ -178,9 +280,10 @@ export default function TodayPick({
         openCat === r.cat ? (
           <div className="outfit-card open" key={r.cat} data-cat={r.cat}>
             <div className="oc-bar">
-              <b>{label(r.cat)}</b>
+              <b>{label(r.cat)}{r.cat === 'top' && r.picked.length > 1 ? ` · 已穿 ${r.picked.length} 件` : ''}</b>
               <button className="oc-close" onClick={() => { setOpenCat(null); setOpenSub(undefined) }}>‹ 收起</button>
             </div>
+            {r.cat === 'top' && r.picked.length >= MAX_TOPS && <div className="oc-hint">最多叠穿 {MAX_TOPS} 件，想加先点 ✓ 减一件</div>}
             {subs.length > 0 && !openSub && (
               <div className="sub-grid">
                 {subs.map((x) => (
@@ -205,11 +308,15 @@ export default function TodayPick({
           <PickCard
             key={r.cat}
             cat={r.cat}
-            item={r.picked[0]}
+            items={r.picked}
             on={r.picked.length > 0}
             count={r.picked.length}
             selIds={r.picked.map((i) => i.id)}
             onOpen={() => { setOpenCat(r.cat); setOpenSub(undefined) }}
+            onAdd={r.cat === 'top' ? addTop : undefined}
+            onRemove={r.cat === 'top' ? removeTop : undefined}
+            canAdd={topIds.length < MAX_TOPS}
+            canRemove={topIds.length > 1}
           />
         ),
       )}

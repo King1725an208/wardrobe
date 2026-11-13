@@ -100,15 +100,20 @@ const selected = () =>
   )
 const cats = (sel) => sel.map((s) => s.split(':')[0])
 const btnText = () => page.$eval('.rec .rec-btns button.primary', (b) => b.innerText)
-// 点分类卡展开 → 点第一个没选的候选 → 卡片自动收起
+// 点分类卡展开 → 点第一个没选的候选；上衣/配饰选完不自动收起，手动点「收起」
 const tapUnselected = async (cat) => {
   await page.click(`.outfit-card[data-cat="${cat}"]`)
   await page.waitForSelector(`.outfit-card.open[data-cat="${cat}"] .pick-option`)
   const t = await page.$(`.outfit-card.open[data-cat="${cat}"] .pick-option:not(.on)`)
   const id = await page.evaluate((e) => e.dataset.id, t)
   await t.click()
+  await sleep(250)
+  const closer = await page.$(`.outfit-card.open[data-cat="${cat}"] .oc-close`)
+  if (closer) {
+    await closer.click()
+    await sleep(150)
+  }
   await page.waitForFunction((c) => !document.querySelector(`.outfit-card.open[data-cat="${c}"]`), {}, cat)
-  await sleep(150)
   return id
 }
 // 测试用照片
@@ -177,10 +182,43 @@ let w = await wear()
 ok(os1.length === 1 && os1[0].itemIds.length === sel1.length, '就穿这套 → 记成今天的穿搭', `${os1.length} 条，${os1[0]?.itemIds.length} 件`)
 ok(Object.values(w).filter((n) => n === 1).length === sel1.length, '这几件的穿着次数 +1')
 
-// 改一件上衣 → 保存修改：仍是同一条，旧上衣次数撤回
-const oldTop = sel1.find((x) => x.startsWith('top:')).split(':')[1]
-const newTop = await tapUnselected('top')
-ok((await btnText()).includes('保存修改'), '改了一件后按钮变成「保存修改」')
+// 上衣可以叠穿：加一件 / ＋一键加 / －减一件，再换成另一件保存
+const topsOf = (sel) => sel.filter((x) => x.startsWith('top:')).map((x) => x.split(':')[1])
+const oldTop = topsOf(sel1)[0]
+// 加一件：点开上衣卡选一件没选的，卡片不自动收起（方便连续加减）
+const addedTop = await tapUnselected('top')
+let tops = topsOf(await selected())
+ok(tops.length === 2 && tops.includes(addedTop), '上衣加一件：变成两件叠穿', tops.join())
+ok((await btnText()).includes('保存修改'), '加了一件后按钮变成「保存修改」')
+const topCardText = await page.$eval('.outfit-card[data-cat="top"]', (e) => e.innerText.replace(/\n/g, ' / '))
+ok(topCardText.includes('2 件叠穿'), '收起的上衣卡显示「2 件叠穿」', topCardText)
+// ＋：一键再加一件最合适的上衣
+await page.click('.outfit-card[data-cat="top"] .oc-step[data-act="add"]')
+await sleep(250)
+tops = topsOf(await selected())
+ok(tops.length === 3, '点 ＋ 再加一件：3 件', tops.join())
+// －：减一件（去掉最后加的）
+await page.click('.outfit-card[data-cat="top"] .oc-step[data-act="remove"]')
+await sleep(250)
+tops = topsOf(await selected())
+ok(tops.length === 2, '点 － 减一件：回到 2 件', tops.join())
+// 把上衣换成另一件：打开卡把现在的两件都点掉（✓），再选一件新的
+await page.click('.outfit-card[data-cat="top"]')
+await page.waitForSelector('.outfit-card.open[data-cat="top"] .pick-option')
+for (const id of tops) {
+  await page.click(`.outfit-card.open[data-cat="top"] .pick-option.on[data-id="${id}"]`)
+  await sleep(120)
+}
+const newTop = await page.evaluate((exclude) => {
+  const opts = [...document.querySelectorAll('.outfit-card.open[data-cat="top"] .pick-option:not(.on)')]
+  return opts.find((o) => !exclude.includes(o.dataset.id))?.dataset.id ?? null
+}, [oldTop, addedTop])
+await page.click(`.outfit-card.open[data-cat="top"] .pick-option:not(.on)[data-id="${newTop}"]`)
+await sleep(150)
+await page.click('.outfit-card.open[data-cat="top"] .oc-close')
+await sleep(150)
+const topsNow = topsOf(await selected())
+ok(topsNow.length === 1 && topsNow[0] === newTop, '换成一件上衣', topsNow.join())
 await click('保存修改')
 await page.waitForFunction(() => document.body.innerText.includes('今天已记录'))
 os1 = await outfits()
