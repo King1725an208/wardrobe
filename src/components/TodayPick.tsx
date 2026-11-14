@@ -241,12 +241,12 @@ export default function TodayPick({
 
   // 上衣叠穿：当前选中的上衣（按选择顺序）
   const topIds = ids.filter((id) => items.find((i) => i.id === id)?.category === 'top')
+  const nextTop = rows.find((r) => r.cat === 'top')?.list.find((i) => i.category === 'top' && !ids.includes(i.id))
+  const canAddTop = topIds.length < MAX_TOPS && !!nextTop
   // ＋：一键加一件最合适的上衣，不用打开选衣卡
   const addTop = () => {
-    if (topIds.length >= MAX_TOPS) return
-    const row = rows.find((r) => r.cat === 'top')
-    const next = row?.list.find((i) => i.category === 'top' && !ids.includes(i.id))
-    if (next) setSel(toggle(ids, next, items))
+    if (!canAddTop || !nextTop) return
+    setSel(toggle(ids, nextTop, items))
   }
   // －：减一件，去掉最后加的那件
   const removeTop = () => {
@@ -317,7 +317,7 @@ export default function TodayPick({
             onOpen={() => { setOpenCat(r.cat); setOpenSub(undefined) }}
             onAdd={r.cat === 'top' ? addTop : undefined}
             onRemove={r.cat === 'top' ? removeTop : undefined}
-            canAdd={topIds.length < MAX_TOPS}
+            canAdd={canAddTop}
             canRemove={topIds.length > 1}
           />
         ),
