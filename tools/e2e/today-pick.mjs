@@ -215,12 +215,30 @@ const thirdTop = await pickFreshTop()
 ok(tops.length === 3, '再加一件：3 件叠穿', tops.join())
 if (SHOT) await page.screenshot({ path: `${SHOT}/today-layers.png`, fullPage: true })
 
+// 加到上限 4 件：＋ 空卡禁用；减回 3 件恢复可点
+await page.click('.top-slots .top-slot.add')
+await page.waitForSelector('.outfit-card.open[data-cat="top"] .pick-option')
+await pickFreshTop()
+tops = topsOf(await selected())
+ok(tops.length === 4, '加到 4 件：达到叠穿上限', tops.join())
+ok(await page.$eval('.top-slots .top-slot.add', (e) => e.disabled), '4 件时 ＋ 空卡禁用（到上限）')
+await page.evaluate(() => {
+  const cards = [...document.querySelectorAll('.top-slots .top-slot:not(.add)')]
+  cards[3].querySelector('.ts-rm').click()
+})
+await sleep(300)
+tops = topsOf(await selected())
+ok(tops.length === 3 && !(await page.$eval('.top-slots .top-slot.add', (e) => e.disabled)), '减回 3 件：＋ 空卡恢复可点', tops.join())
+
 // 点第 2 张小卡单独换一件（replace 模式：只有这一件打 ✓）
 const [t0, t1, t2] = tops
 await page.evaluate(() => document.querySelectorAll('.top-slots .top-slot:not(.add)')[1].click())
 await page.waitForSelector('.outfit-card.open[data-cat="top"] .pick-option')
 const slotOnId = await page.$eval('.outfit-card.open[data-cat="top"] .pick-option.on', (e) => e.dataset.id)
 ok(slotOnId === t1, '点开小卡：当前这一件打 ✓', `${slotOnId} vs ${t1}`)
+// 换某层时：别的层已穿的置灰不能再选（同一件不能穿两层，否则会丢一层）
+const disIds = await page.$$eval('.outfit-card.open[data-cat="top"] .pick-option:disabled', (els) => els.map((e) => e.dataset.id))
+ok(disIds.length === 2 && disIds.every((x) => tops.includes(x) && x !== t1), '换某层：别的层已穿的置灰不能选', disIds.join())
 const replTop = await page.evaluate((cur) => {
   const opts = [...document.querySelectorAll('.outfit-card.open[data-cat="top"] .pick-option')]
   return opts.map((o) => o.dataset.id).find((x) => !cur.includes(x)) ?? null

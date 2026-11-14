@@ -120,13 +120,13 @@ function PickCard({
   )
 }
 
-/** 展开态里的一件候选：图 + 品牌子类 + 备注，点了就换 */
-function PickOption({ item, on, onTap }: { item: WardrobeItem; on: boolean; onTap: (it: WardrobeItem) => void }) {
+/** 展开态里的一件候选：图 + 品牌子类 + 备注，点了就换；disabled=已穿不能重复选 */
+function PickOption({ item, on, disabled, onTap }: { item: WardrobeItem; on: boolean; disabled?: boolean; onTap: (it: WardrobeItem) => void }) {
   const url = useBlobUrl(item.photo)
   const { settings } = useStore()
   const lv = wearLevel(item, settings)
   return (
-    <button className={`pick-option ${on ? 'on' : ''}`} data-id={item.id} onClick={() => onTap(item)}>
+    <button className={`pick-option ${on ? 'on' : ''}`} data-id={item.id} disabled={disabled} onClick={() => onTap(item)}>
       <span className="po-img">
         {url && <img src={url} alt="" />}
         {on && <span className="tick">✓</span>}
@@ -175,11 +175,13 @@ function TopSlotCard({ item, onOpen, onRemove }: { item: WardrobeItem; onOpen: (
 
 function TopSlots({
   tops,
+  canAdd,
   onOpenSlot,
   onRemoveSlot,
   onAdd,
 }: {
   tops: WardrobeItem[]
+  canAdd: boolean
   onOpenSlot: (i: number) => void
   onRemoveSlot: (i: number) => void
   onAdd: () => void
@@ -189,7 +191,7 @@ function TopSlots({
       {tops.map((it, i) => (
         <TopSlotCard key={it.id} item={it} onOpen={() => onOpenSlot(i)} onRemove={() => onRemoveSlot(i)} />
       ))}
-      <button type="button" className="top-slot add" onClick={onAdd}>
+      <button type="button" className="top-slot add" disabled={!canAdd} onClick={onAdd}>
         <span className="ts-img"><span className="ts-plus">＋</span></span>
         <span className="ts-meta"><span className="ts-empty">选上衣</span></span>
       </button>
@@ -326,6 +328,11 @@ export default function TodayPick({
         closePick()
         return
       }
+      // 已穿在别的层：同一件不能穿两层，直接忽略（避免丢一层）
+      if (topIds.some((x, i) => x === it.id && i !== slot)) {
+        closePick()
+        return
+      }
       const next: string[] = []
       for (const x of ids) {
         if (x === oldId) next.push(it.id)
@@ -352,6 +359,12 @@ export default function TodayPick({
     ? SUBTYPES[open.cat]?.map((x) => ({ ...x, list: open.list.filter((i) => i.subtype === x.key) })).filter((x) => x.list.length > 0) ?? []
     : []
   const options = open ? (openSub ? open.list.filter((i) => i.subtype === openSub) : subs.length ? [] : open.list) : []
+  // 上衣选衣卡里「已穿、不能重复选」的候选：加一层=已穿的都不行；换某层=别的层已穿的不能再选
+  const topTaken = (it: WardrobeItem) => {
+    if (openCat !== 'top' || editSlot === null) return false
+    if (editSlot === 'add') return ids.includes(it.id)
+    return topIds.includes(it.id) && it.id !== slotOnId
+  }
 
   return (
     <div className="rec">
@@ -389,6 +402,7 @@ export default function TodayPick({
                       key={it.id}
                       item={it}
                       on={openCat === 'top' && editSlot !== null ? it.id === slotOnId : ids.includes(it.id)}
+                      disabled={topTaken(it)}
                       onTap={(x) => (openCat === 'top' && editSlot !== null ? assignTop(editSlot, x) : pick(x))}
                     />
                   ))}
@@ -402,6 +416,7 @@ export default function TodayPick({
             <TopSlots
               key="top"
               tops={topItems}
+              canAdd={canAddTop}
               onOpenSlot={(i) => openRow('top', i)}
               onRemoveSlot={(i) => setSel(ids.filter((x) => x !== topIds[i]))}
               onAdd={() => openRow('top', 'add')}
