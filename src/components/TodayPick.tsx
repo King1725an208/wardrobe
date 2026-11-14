@@ -92,6 +92,7 @@ function PickCard({
                   e.stopPropagation()
                   onAdd()
                 }}
+                onKeyDown={(e) => e.stopPropagation()}
               >
                 ＋
               </button>
@@ -105,6 +106,7 @@ function PickCard({
                   e.stopPropagation()
                   onRemove()
                 }}
+                onKeyDown={(e) => e.stopPropagation()}
               >
                 －
               </button>
