@@ -113,6 +113,38 @@ export async function unmarkWorn(date: string, itemIds: string[]): Promise<void>
   await tx.done
 }
 
+export async function rewearOutfit(date: string, oldIds: string[], newIds: string[]): Promise<void> {
+  const d = await db()
+  const outfits: OutfitRecord[] = await d.getAll('outfits')
+  const ts = new Date(date + 'T12:00:00').getTime()
+  const day = new Date(ts).toDateString()
+  const removed = oldIds.filter((id) => !newIds.includes(id))
+  const added = newIds.filter((id) => !oldIds.includes(id))
+  const tx = d.transaction('items', 'readwrite')
+  for (const id of removed) {
+    const item: WardrobeItem | undefined = await tx.store.get(id)
+    if (!item) continue
+    item.wearCount = Math.max(0, item.wearCount - 1)
+    if (item.lastWornAt && new Date(item.lastWornAt).toDateString() === day) {
+      const latest = outfits
+        .filter((o) => o.date !== date && o.itemIds.includes(id))
+        .map((o) => o.date)
+        .sort()
+        .pop()
+      item.lastWornAt = latest ? new Date(latest + 'T12:00:00').getTime() : undefined
+    }
+    await tx.store.put(item)
+  }
+  for (const id of added) {
+    const item: WardrobeItem | undefined = await tx.store.get(id)
+    if (!item) continue
+    item.wearCount += 1
+    item.lastWornAt = Math.max(item.lastWornAt ?? 0, ts)
+    await tx.store.put(item)
+  }
+  await tx.done
+}
+
 export async function getSettings(): Promise<Settings> {
   const row = await (await db()).get('settings', 'main')
   return (row?.value as Settings) ?? {}

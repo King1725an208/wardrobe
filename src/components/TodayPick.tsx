@@ -218,10 +218,14 @@ export default function TodayPick({
   ctx,
   existing,
   onSave,
+  mode = 'today',
+  onClose,
 }: {
   ctx: RecCtx
-  existing: OutfitRecord | undefined // 今天已有的记录
+  existing: OutfitRecord | undefined
   onSave: (ids: string[], photo: Blob | undefined, note: string) => Promise<void>
+  mode?: 'today' | 'edit'
+  onClose?: () => void
 }) {
   const { items } = useStore()
   const [seed, setSeed] = useState(0)
@@ -238,7 +242,10 @@ export default function TodayPick({
   const base = useMemo(() => compose(rk, ctx, seed, avoid), [rk, ctx, seed, avoid])
   const worn = existing?.itemIds
   // 推荐（或今天记下的）那几件，排在候选最前面
-  const anchor = useMemo(() => (seed === 0 && worn?.length ? worn : base ? recIds(base) : []), [seed, worn, base])
+  const anchor = useMemo(
+    () => mode === 'edit' ? (existing?.itemIds ?? []) : seed === 0 && worn?.length ? worn : base ? recIds(base) : [],
+    [mode, existing?.itemIds, seed, worn, base],
+  )
   const ids = (sel ?? anchor).filter((id) => items.some((i) => i.id === id))
 
   // 每个分类：候选列表（推荐的在前）+ 当前选中的
@@ -253,7 +260,7 @@ export default function TodayPick({
     [items, rk, anchor, ids],
   )
 
-  if (!items.length) return <div className="rec rec-empty">👗 {missingHint(items, ctx)}</div>
+  if (!items.length && mode === 'today') return <div className="rec rec-empty">👗 {missingHint(items, ctx)}</div>
 
   const slots: Rec['slots'] = {}
   for (const id of ids) {
@@ -280,8 +287,11 @@ export default function TodayPick({
     setOpenSub(undefined)
     setEditSlot(null)
   }
-  const wear = () => run(() => onSave(ids, existing?.photo, note.trim()))
-  // 照片选好就存进今天这条记录（还没选衣服也先存上）
+  const wear = () => run(async () => {
+    await onSave(ids, existing?.photo, note.trim())
+    if (mode === 'edit') onClose?.()
+  })
+  // 照片选好就存进这条记录（还没选衣服也先存上）
   const pickPhoto = async (f: File | undefined) => {
     if (!f) return
     try {
@@ -293,7 +303,7 @@ export default function TodayPick({
     }
   }
   const delPhoto = () => {
-    if (confirm('删掉今天这张照片？')) void run(() => onSave(existing?.itemIds ?? [], undefined, existing?.note ?? ''))
+    if (confirm(mode === 'edit' ? '删掉这天的照片？' : '删掉今天这张照片？')) void run(() => onSave(existing?.itemIds ?? [], undefined, existing?.note ?? ''))
   }
 
   // 上衣叠穿：当前选中的上衣（按选择顺序）
@@ -369,10 +379,10 @@ export default function TodayPick({
   return (
     <div className="rec">
       <div className="rec-head">
-        <b>今天穿这套</b>
+        <b>{mode === 'edit' ? '修改这天的穿搭' : '今天穿这套'}</b>
         <span className="muted">点卡片换衣服，品牌备注都写在图下面</span>
       </div>
-      {!base && <div className="muted">👗 {missingHint(items, ctx)}</div>}
+      {!base && mode === 'today' && <div className="muted">👗 {missingHint(items, ctx)}</div>}
 
       {rows.map((r) => {
         if (openCat === r.cat) {
@@ -440,7 +450,7 @@ export default function TodayPick({
         )
       })}
 
-      {reasons.length > 0 && (
+      {mode === 'today' && reasons.length > 0 && (
         <div className="chips rec-why">
           {reasons.map((r) => (
             <span key={r} className="badge">{r}</span>
@@ -459,15 +469,19 @@ export default function TodayPick({
         </div>
       ) : (
         <button className="photo-btn rec-add-photo" disabled={busy} onClick={() => fileRef.current?.click()}>
-          📸 加一张今天的照片（拍照或相册）
+          📸 {mode === 'edit' ? '加一张这天的照片' : '加一张今天的照片（拍照或相册）'}
         </button>
       )}
       <textarea className="rec-note" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="感想（可不填）：今天穿着感觉、去了哪、天气如何…" />
 
       <div className="rec-btns">
-        <button className="photo-btn" onClick={another}>🔄 换一套</button>
-        <button className="primary" disabled={busy || done || ids.length === 0} onClick={wear}>
-          {done ? '✓ 今天已记录' : worn?.length ? '保存修改' : '就穿这套'}
+        {mode === 'edit' ? (
+          <button className="photo-btn" onClick={onClose}>取消</button>
+        ) : (
+          <button className="photo-btn" onClick={another}>🔄 换一套</button>
+        )}
+        <button className="primary" disabled={busy || done || (mode === 'today' && ids.length === 0)} onClick={wear}>
+          {done ? mode === 'edit' ? '✓ 已保存' : '✓ 今天已记录' : mode === 'edit' || worn?.length ? '保存修改' : '就穿这套'}
         </button>
       </div>
     </div>

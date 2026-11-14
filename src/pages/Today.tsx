@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useStore } from '../store'
-import { markWorn, unmarkWorn } from '../db'
+import { markWorn, rewearOutfit, unmarkWorn } from '../db'
 import { CATEGORIES } from '../types'
 import { useBlobUrl } from '../useBlobUrl'
 import type { Category, OutfitRecord, WardrobeItem } from '../types'
@@ -35,7 +35,19 @@ function BreakdownItem({ item }: { item: WardrobeItem }) {
   )
 }
 
-function OutfitCard({ rec, today }: { rec: OutfitRecord; today?: boolean }) {
+function OutfitCard({
+  rec,
+  today,
+  editing,
+  onEdit,
+  editor,
+}: {
+  rec: OutfitRecord
+  today?: boolean
+  editing: boolean
+  onEdit: () => void
+  editor?: ReactNode
+}) {
   const url = useBlobUrl(rec.photo)
   const { items } = useStore()
   const [open, setOpen] = useState(false)
@@ -50,12 +62,15 @@ function OutfitCard({ rec, today }: { rec: OutfitRecord; today?: boolean }) {
       <div className="outfit-head">
         <span className="outfit-date">{rec.date}{today ? ' · 今天' : ''}</span>
         <span className="muted">{rec.weather ?? ''} {open ? '收起' : '展开拆解'}</span>
+        <button type="button" className="outfit-edit" onClick={(e) => { e.stopPropagation(); onEdit() }}>修改</button>
       </div>
       {open ? (
         <div className="breakdown">
-          {worn.map((g) =>
-            g.list.map((it) => <BreakdownItem key={`${g.cat}-${it.id}`} item={it} />),
-          )}
+          {worn.map((g) => (
+            <div key={g.cat} className={`bd-row ${g.list.length > 1 ? 'multi' : ''}`}>
+              {g.list.map((it) => <BreakdownItem key={`${g.cat}-${it.id}`} item={it} />)}
+            </div>
+          ))}
         </div>
       ) : (
         <div className="chips">
@@ -71,6 +86,7 @@ function OutfitCard({ rec, today }: { rec: OutfitRecord; today?: boolean }) {
       )}
       {url && <img src={url} alt="" />}
       {rec.note && <div className="muted">{rec.note}</div>}
+      {editing && <div onClick={(e) => e.stopPropagation()}>{editor}</div>}
     </div>
   )
 }
@@ -78,6 +94,7 @@ function OutfitCard({ rec, today }: { rec: OutfitRecord; today?: boolean }) {
 export default function Today() {
   const { outfits, settings, saveOutfit, load } = useStore()
   const existing = outfits.find((o) => o.date === today())
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [weather, setWeather] = useState<Weather | null | undefined>()
   const [day, setDay] = useState<DayInfo | undefined>()
   useEffect(() => {
@@ -104,6 +121,18 @@ export default function Today() {
     await markWorn(date, ids)
     await load()
   }
+  const saveFor = (rec: OutfitRecord) => async (ids: string[], photo: Blob | undefined, note: string) => {
+    await saveOutfit({ ...rec, photo, itemIds: ids, note: note || undefined })
+    await rewearOutfit(rec.date, rec.itemIds, ids)
+    await load()
+  }
+  const editRecord = (rec: OutfitRecord) => {
+    if (rec.date === date) {
+      document.querySelector('.rec')?.scrollIntoView({ behavior: 'smooth' })
+      return
+    }
+    setEditingId((id) => id === rec.id ? null : rec.id)
+  }
 
   return (
     <div className="page">
@@ -113,7 +142,23 @@ export default function Today() {
 
       <h2>历史记录</h2>
       {outfits.map((o) => (
-        <OutfitCard key={o.id} rec={o} today={o.date === date} />
+        <OutfitCard
+          key={o.id}
+          rec={o}
+          today={o.date === date}
+          editing={editingId === o.id}
+          onEdit={() => editRecord(o)}
+          editor={editingId === o.id ? (
+            <TodayPick
+              key={o.id}
+              mode="edit"
+              ctx={{ date: o.date, weather: undefined, day: undefined, outfits, settings }}
+              existing={o}
+              onSave={saveFor(o)}
+              onClose={() => setEditingId(null)}
+            />
+          ) : undefined}
+        />
       ))}
     </div>
   )
