@@ -62,6 +62,7 @@ await page.evaluate(async () => {
     })
   const spec = [
     ['top', '春秋', '#333', ['黑'], ['通勤']], ['top', '春秋', '#c66', ['红'], ['休闲']], ['top', '春秋', '#ddd', ['灰'], ['通勤']],
+    ['top', '春秋', '#369', ['蓝'], ['休闲']], ['top', '春秋', '#963', ['酒红'], ['甜美']],
     ['bottom', '春秋', '#235', ['藏青'], ['通勤']], ['bottom', '春秋', '#a87', ['卡其'], ['休闲']],
     ['outerwear', '春秋', '#975', ['驼色'], ['通勤']], ['outerwear', '春秋', '#555', ['灰'], ['休闲']],
     ['dress', '春秋', '#7a5', ['墨绿'], ['甜美']],
@@ -95,20 +96,25 @@ const outfits = () => dbAll('outfits')
 const wear = async () => Object.fromEntries((await dbAll('items')).map((i) => [i.id, i.wearCount]))
 // 方案C：选中状态在卡片的 data-ids 里（收起态就能读到）
 const selected = () =>
-  page.$$eval('.outfit-card[data-ids]', (xs) =>
+  page.$$eval('[data-cat][data-ids]', (xs) =>
     xs.flatMap((e) => (e.dataset.ids ? e.dataset.ids.split(' ').map((id) => `${e.dataset.cat}:${id}`) : [])),
   )
 const cats = (sel) => sel.map((s) => s.split(':')[0])
 const btnText = () => page.$eval('.rec .rec-btns button.primary', (b) => b.innerText)
-// 点分类卡展开 → 点第一个没选的候选 → 卡片自动收起
+// 点分类卡展开 → 点第一个没选的候选；上衣/配饰选完不自动收起，手动点「收起」
 const tapUnselected = async (cat) => {
   await page.click(`.outfit-card[data-cat="${cat}"]`)
   await page.waitForSelector(`.outfit-card.open[data-cat="${cat}"] .pick-option`)
   const t = await page.$(`.outfit-card.open[data-cat="${cat}"] .pick-option:not(.on)`)
   const id = await page.evaluate((e) => e.dataset.id, t)
   await t.click()
+  await sleep(250)
+  const closer = await page.$(`.outfit-card.open[data-cat="${cat}"] .oc-close`)
+  if (closer) {
+    await closer.click()
+    await sleep(150)
+  }
   await page.waitForFunction((c) => !document.querySelector(`.outfit-card.open[data-cat="${c}"]`), {}, cat)
-  await sleep(150)
   return id
 }
 // 测试用照片
@@ -177,10 +183,105 @@ let w = await wear()
 ok(os1.length === 1 && os1[0].itemIds.length === sel1.length, '就穿这套 → 记成今天的穿搭', `${os1.length} 条，${os1[0]?.itemIds.length} 件`)
 ok(Object.values(w).filter((n) => n === 1).length === sel1.length, '这几件的穿着次数 +1')
 
-// 改一件上衣 → 保存修改：仍是同一条，旧上衣次数撤回
-const oldTop = sel1.find((x) => x.startsWith('top:')).split(':')[1]
-const newTop = await tapUnselected('top')
-ok((await btnText()).includes('保存修改'), '改了一件后按钮变成「保存修改」')
+// 上衣可以叠穿：＋ 加一件 → 分层小卡；小卡单独换/减；减到 0 变灰；最后换成一件保存
+const topsOf = (sel) => sel.filter((x) => x.startsWith('top:')).map((x) => x.split(':')[1])
+const oldTop = topsOf(sel1)[0]
+let tops = topsOf(sel1)
+
+// 选衣卡里挑一件「还没穿」的上衣（add 模式没有 ✓，按当前 tops 排除）
+const pickFreshTop = async () => {
+  const id = await page.evaluate((cur) => {
+    const opts = [...document.querySelectorAll('.outfit-card.open[data-cat="top"] .pick-option')]
+    return opts.map((o) => o.dataset.id).find((x) => !cur.includes(x)) ?? null
+  }, tops)
+  await page.click(`.outfit-card.open[data-cat="top"] .pick-option[data-id="${id}"]`)
+  await sleep(300)
+  tops = topsOf(await selected())
+  return id
+}
+
+// 按 ＋：打开上衣选衣卡加一件 → 变成两张小卡
+await page.click('.outfit-card[data-cat="top"] .oc-step[data-act="add"]')
+await page.waitForSelector('.outfit-card.open[data-cat="top"] .pick-option')
+const addedTop = await pickFreshTop()
+ok(tops.length === 2 && tops.includes(addedTop), '按 ＋ 加一件上衣：变成两张小卡', tops.join())
+ok((await btnText()).includes('保存修改'), '加了一件后按钮变成「保存修改」')
+ok((await page.$$eval('.top-slots .top-slot:not(.add)', (els) => els.length)) === 2, '两张衣服小卡（＋ 空卡另算）')
+
+// 再按 ＋ 空卡加第三件
+await page.click('.top-slots .top-slot.add')
+await page.waitForSelector('.outfit-card.open[data-cat="top"] .pick-option')
+const thirdTop = await pickFreshTop()
+ok(tops.length === 3, '再加一件：3 件叠穿', tops.join())
+if (SHOT) await page.screenshot({ path: `${SHOT}/today-layers.png`, fullPage: true })
+
+// 加到上限 4 件：＋ 空卡禁用；减回 3 件恢复可点
+await page.click('.top-slots .top-slot.add')
+await page.waitForSelector('.outfit-card.open[data-cat="top"] .pick-option')
+await pickFreshTop()
+tops = topsOf(await selected())
+ok(tops.length === 4, '加到 4 件：达到叠穿上限', tops.join())
+ok(await page.$eval('.top-slots .top-slot.add', (e) => e.disabled), '4 件时 ＋ 空卡禁用（到上限）')
+await page.evaluate(() => {
+  const cards = [...document.querySelectorAll('.top-slots .top-slot:not(.add)')]
+  cards[3].querySelector('.ts-rm').click()
+})
+await sleep(300)
+tops = topsOf(await selected())
+ok(tops.length === 3 && !(await page.$eval('.top-slots .top-slot.add', (e) => e.disabled)), '减回 3 件：＋ 空卡恢复可点', tops.join())
+
+// 点第 2 张小卡单独换一件（replace 模式：只有这一件打 ✓）
+const [t0, t1, t2] = tops
+await page.evaluate(() => document.querySelectorAll('.top-slots .top-slot:not(.add)')[1].click())
+await page.waitForSelector('.outfit-card.open[data-cat="top"] .pick-option')
+const slotOnId = await page.$eval('.outfit-card.open[data-cat="top"] .pick-option.on', (e) => e.dataset.id)
+ok(slotOnId === t1, '点开小卡：当前这一件打 ✓', `${slotOnId} vs ${t1}`)
+// 换某层时：别的层已穿的置灰不能再选（同一件不能穿两层，否则会丢一层）
+const disIds = await page.$$eval('.outfit-card.open[data-cat="top"] .pick-option:disabled', (els) => els.map((e) => e.dataset.id))
+ok(disIds.length === 2 && disIds.every((x) => tops.includes(x) && x !== t1), '换某层：别的层已穿的置灰不能选', disIds.join())
+const replTop = await page.evaluate((cur) => {
+  const opts = [...document.querySelectorAll('.outfit-card.open[data-cat="top"] .pick-option')]
+  return opts.map((o) => o.dataset.id).find((x) => !cur.includes(x)) ?? null
+}, tops)
+await page.click(`.outfit-card.open[data-cat="top"] .pick-option[data-id="${replTop}"]`)
+await sleep(300)
+tops = topsOf(await selected())
+ok(tops.length === 3 && tops[0] === t0 && tops[1] === replTop && tops[2] === t2, '小卡单独换一件：只换第 2 件', tops.join())
+
+// －：点小卡的 － 减一件
+await page.evaluate(() => {
+  const cards = [...document.querySelectorAll('.top-slots .top-slot:not(.add)')]
+  cards[2].querySelector('.ts-rm').click()
+})
+await sleep(300)
+tops = topsOf(await selected())
+ok(tops.length === 2, '点小卡 － 减一件：回到 2 件', tops.join())
+
+// 再减一件 → 1 件回到整宽卡；再点 － → 0 件变灰
+await page.evaluate(() => {
+  const cards = [...document.querySelectorAll('.top-slots .top-slot:not(.add)')]
+  cards[1].querySelector('.ts-rm').click()
+})
+await sleep(300)
+tops = topsOf(await selected())
+ok(tops.length === 1 && !!(await page.$('.outfit-card[data-cat="top"]')), '减到 1 件：回到整宽卡', tops.join())
+await page.click('.outfit-card[data-cat="top"] .oc-step[data-act="remove"]')
+await sleep(300)
+tops = topsOf(await selected())
+ok(tops.length === 0, '再点 －：0 件上衣', tops.join())
+ok(!!(await page.$('.outfit-card[data-cat="top"] .oc-empty')), '0 件上衣：卡片变灰空白')
+
+// 空白卡选一件新的上衣，保存
+await page.click('.outfit-card[data-cat="top"]')
+await page.waitForSelector('.outfit-card.open[data-cat="top"] .pick-option')
+const newTop = await page.evaluate((ex) => {
+  const opts = [...document.querySelectorAll('.outfit-card.open[data-cat="top"] .pick-option')]
+  return opts.map((o) => o.dataset.id).find((x) => !ex.includes(x)) ?? null
+}, [oldTop, addedTop, thirdTop, replTop].filter(Boolean))
+await page.click(`.outfit-card.open[data-cat="top"] .pick-option[data-id="${newTop}"]`)
+await sleep(300)
+tops = topsOf(await selected())
+ok(tops.length === 1 && tops[0] === newTop, '空白卡选一件新上衣', tops.join())
 await click('保存修改')
 await page.waitForFunction(() => document.body.innerText.includes('今天已记录'))
 os1 = await outfits()
