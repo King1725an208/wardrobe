@@ -12,7 +12,15 @@ export default function WeatherCard({ weather, day }: { weather: Weather | null 
         </div>
       </div>
     )
-  const tip = weather.rainy ? ' · 记得带伞' : weather.max - weather.min >= 8 ? ' · 早晚温差大' : ''
+  const tip = weather.rainy && weather.windy
+    ? ' · 风雨大，记得带伞'
+    : weather.rainy
+      ? ' · 记得带伞'
+      : weather.windy
+        ? ' · 风大'
+        : weather.max - weather.min >= 8
+          ? ' · 早晚温差大'
+          : ''
   return (
     <div className="wx">
       <div className="wx-temp">{weather.temp}°</div>

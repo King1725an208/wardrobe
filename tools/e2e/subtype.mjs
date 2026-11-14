@@ -12,14 +12,20 @@
  * 用法：npm run build && CHROME_PATH=... node tools/e2e/subtype.mjs
  */
 import { createServer } from 'node:http'
+import { mkdtempSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { build } from 'rolldown'
 import puppeteer from 'puppeteer-core'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const dist = path.join(root, 'dist')
 const CHROME = process.env.CHROME_PATH || '/usr/bin/google-chrome'
+const typesOut = path.join(mkdtempSync(path.join(tmpdir(), 'wardrobe-types-')), 'types.mjs')
+await build({ input: 'src/types.ts', output: { file: typesOut, format: 'esm' }, logLevel: 'silent' })
+const { SUBTYPES } = await import(typesOut)
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.ico': 'image/x-icon',
@@ -31,6 +37,9 @@ function check(name, ok, detail = '') {
   checks.push({ name, ok })
   console.log(`${ok ? '✅' : '❌'} ${name}${detail ? ` — ${detail}` : ''}`)
 }
+const shellSubtype = SUBTYPES.outerwear?.find((x) => x.key === 'shell')
+const fleeceSubtype = SUBTYPES.top?.find((x) => x.key === 'fleece')
+check('功能外套与抓绒/内胆子类标签', shellSubtype?.label === '功能外套' && fleeceSubtype?.label === '抓绒/内胆')
 
 // ---------- 桩：方舟 chat/completions ----------
 let chatCalls = 0

@@ -61,13 +61,14 @@ export function targetWarmth(ctx: RecCtx): number {
 
 export function needOuter(ctx: RecCtx): boolean {
   const hi = todayHigh(ctx)
-  return hi <= 20 || (!!ctx.weather?.rainy && hi <= 24)
+  return hi <= 20 || (!!(ctx.weather?.rainy || ctx.weather?.windy) && hi <= 24)
 }
 
 function seasonFit(item: WardrobeItem, season: Season): number | null {
   if (item.season === season) return 3
+  if (item.category === 'outerwear' && item.subtype === 'shell' && season === '春秋') return 3
   // 不到冬天不推厚外套
-  if (item.category === 'outerwear' && item.season === '冬') return null
+  if (item.category === 'outerwear' && item.season === '冬' && item.subtype !== 'shell') return null
   if (item.season === '春秋' || season === '春秋') return 0
   return null // 夏 ↔ 冬 不推
 }
@@ -95,6 +96,7 @@ function scoreOf(item: WardrobeItem, ctx: RecCtx, yesterday: Set<string>, recent
   if (item.styles.some((x) => want.includes(x))) s += 2
   const lv = wearLevel(item, ctx.settings, new Date(ctx.date + 'T12:00:00').getTime())
   s += lv === 'never' ? 3 : lv === undefined ? 2.5 : lv === 'rarely' ? 1.5 : 0
+  if ((ctx.weather?.rainy || ctx.weather?.windy) && item.category === 'outerwear' && item.subtype === 'shell') s += 5
   // 保暖度贴合今天温度：差 1 档扣 1.5，差 2 档以上扣 3（外套/包/配饰不参与）
   if (!['outerwear', 'bag', 'accessory'].includes(item.category)) {
     const d = Math.abs(warmth(item) - targetWarmth(ctx))
@@ -175,7 +177,11 @@ export function reasonsFor(slots: Rec['slots'], ctx: RecCtx): string[] {
   const want = ctx.day?.off ? OFF_STYLES : WORK_STYLES
   if (all.some((it) => it.styles.some((s) => want.includes(s)))) out.push(ctx.day?.off ? '休闲' : '通勤')
   const hi = todayHigh(ctx)
-  if (ctx.weather?.rainy) out.push(slots.outerwear ? `${label('outerwear')}挡雨` : '避开浅色防脏')
+  const shell = slots.outerwear?.subtype === 'shell'
+  if (ctx.weather?.rainy && ctx.weather?.windy) out.push(shell ? '冲锋衣挡风雨' : slots.outerwear ? '外套挡风雨' : '避开浅色防脏')
+  else if (ctx.weather?.rainy) out.push(shell ? '冲锋衣挡雨' : slots.outerwear ? `${label('outerwear')}挡雨` : '避开浅色防脏')
+  else if (ctx.weather?.windy && shell) out.push('风大穿冲锋衣')
+  else if (ctx.weather?.windy && slots.outerwear) out.push('风大加件外套')
   else if (slots.outerwear) out.push(`最高 ${hi}° 加件外套`)
   else if (hi >= 28) out.push('清爽透气')
   // 最久没穿 / 从没穿过的那件
