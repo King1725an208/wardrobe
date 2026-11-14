@@ -22,6 +22,7 @@ export const SUBTYPES: Partial<Record<Category, { key: string; label: string; wa
     { key: 'long_tee', label: '长袖 T恤', warm: 2 },
     { key: 'hoodie', label: '长袖卫衣', warm: 2 },
     { key: 'knit', label: '长袖毛衣', warm: 3 },
+    { key: 'fleece', label: '抓绒/内胆', warm: 3 },
     { key: 'other_long', label: '其他长袖', warm: 2 },
   ],
   bottom: [
@@ -32,6 +33,7 @@ export const SUBTYPES: Partial<Record<Category, { key: string; label: string; wa
   ],
   outerwear: [
     { key: 'thin', label: '薄外套', warm: 1 },
+    { key: 'shell', label: '功能外套', warm: 1 },
     { key: 'thick', label: '厚外套', warm: 2 },
   ],
   dress: [

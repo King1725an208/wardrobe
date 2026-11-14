@@ -21,7 +21,7 @@ let n = 0
 const it = (category, season, extra = {}) => ({
   id: `${category}-${++n}`, photo: null, category, season, colors: ['黑'], styles: [], createdAt: 0, wearCount: 0, ...extra,
 })
-const W = (max, rainy = false) => ({ temp: max - 3, min: max - 8, max, rainProb: rainy ? 90 : 0, text: rainy ? '小雨' : '晴', rainy })
+const W = (max, rainy = false, windy = false) => ({ temp: max - 3, min: max - 8, max, rainProb: rainy ? 90 : 0, text: rainy ? '小雨' : '晴', rainy, windy })
 const work = { off: false, label: '工作日', week: '周一' }
 const off = { off: true, label: '周末', week: '周六' }
 const ctxOf = (weather, day = work, outfits = []) => ({ date, weather, day, outfits, settings: {} })
@@ -112,6 +112,42 @@ for (let seed = 0; seed < 30; seed++) {
     if (rec.slots.bottom && yesterday.itemIds.includes(rec.slots.bottom.id)) rep++
   }
   ok(rep === 0, '上衣/下装有别的可选时不重复昨天')
+}
+
+// 3b. 风雨优先功能外套，晴天不强制
+{
+  const thin = it('outerwear', '春秋', { subtype: 'thin', styles: ['通勤'] })
+  const shell = it('outerwear', '冬', { subtype: 'shell' })
+  const thick = it('outerwear', '冬', { subtype: 'thick' })
+  const clothes = [...wardrobe.filter((x) => x.category !== 'outerwear'), thin, shell, thick]
+  const rainy = ctxOf(W(18, true))
+  let shellWins = 0
+  let rainReason = false
+  for (let seed = 0; seed < 6; seed++) {
+    const rec = R.compose(R.rank(clothes, rainy, seed), rainy, seed)
+    if (rec?.slots.outerwear?.id === shell.id) shellWins++
+    if (rec?.reasons.includes('冲锋衣挡雨')) rainReason = true
+  }
+  ok(shellWins === 6, '18° 下雨连续 6 个 seed 优先功能外套', `${shellWins}/6`)
+  ok(rainReason, '雨天功能外套理由为「冲锋衣挡雨」')
+
+  const windy = ctxOf(W(22, false, true))
+  const windyRec = R.compose(R.rank(clothes, windy, 0), windy, 0)
+  ok(windyRec?.slots.outerwear?.id === shell.id && windyRec.reasons.includes('风大穿冲锋衣'), '22° 有风推荐功能外套并提示风大')
+
+  const storm = ctxOf(W(22, true, true))
+  const stormRec = R.compose(R.rank(clothes, storm, 0), storm, 0)
+  ok(stormRec?.reasons.includes('冲锋衣挡风雨'), '风雨天理由为「冲锋衣挡风雨」')
+
+  const sunny = ctxOf(W(18))
+  const sunnyRank = R.rank(clothes, sunny, 0)
+  const sunnyRec = R.compose(sunnyRank, sunny, 0)
+  ok(!!sunnyRec?.slots.outerwear, '晴天 18° 仍推荐外套')
+  ok(sunnyRank.bySlot.outerwear.some((x) => x.id === shell.id) && !sunnyRank.bySlot.outerwear.some((x) => x.id === thick.id), '晴天 18° 可选冬季功能外套，但排除冬季厚外套')
+
+  const warmWind = ctxOf(W(26, false, true))
+  const warmWindRec = R.compose(R.rank(clothes, warmWind, 0), warmWind, 0)
+  ok(!warmWindRec?.slots.outerwear, '26° 有风不强制推荐外套')
 }
 
 // 5. 冷落优先：经常穿的那件通勤上衣不该总排第一

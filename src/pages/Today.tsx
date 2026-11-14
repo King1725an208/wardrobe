@@ -113,7 +113,7 @@ export default function Today() {
       itemIds: ids,
       note: note || undefined,
       // 天气在第一次保存时快照下来，之后改衣服/照片/感想不会被当天的新天气覆盖
-      weather: existing?.weather ?? (weather ? `${weather.temp}° ${weather.text} · ${weather.min}~${weather.max}°C${weather.rainy ? ' · 有雨' : ''}` : undefined),
+      weather: existing?.weather ?? (weather ? `${weather.temp}° ${weather.text} · ${weather.min}~${weather.max}°C${weather.rainy ? ' · 有雨' : ''}${weather.windy ? ' · 风大' : ''}` : undefined),
       createdAt: existing?.createdAt ?? Date.now(),
     }
     await saveOutfit(rec)

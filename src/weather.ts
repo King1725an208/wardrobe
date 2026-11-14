@@ -7,6 +7,8 @@ export interface Weather {
   rainProb: number // 今天最高降水概率 %
   text: string
   rainy: boolean
+  wind?: number
+  windy?: boolean
 }
 
 export interface DayInfo {
@@ -19,6 +21,7 @@ export interface DayInfo {
 const WEATHER_URL =
   'https://api.open-meteo.com/v1/forecast?latitude=31.23&longitude=121.47' +
   '&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max' +
+  ',wind_speed_10m_max,wind_gusts_10m_max' +
   '&timezone=Asia%2FShanghai&forecast_days=1'
 // 法定节假日 + 调休（NateScarlet/holiday-cn，按国务院通知自动更新）
 const holidayUrl = (y: number) => `https://cdn.jsdelivr.net/gh/NateScarlet/holiday-cn@master/${y}.json`
@@ -63,10 +66,19 @@ export async function getWeather(): Promise<Weather | null> {
   try {
     const d = (await getJson(WEATHER_URL)) as {
       current: { temperature_2m: number; weather_code: number }
-      daily: { weather_code: number[]; temperature_2m_max: number[]; temperature_2m_min: number[]; precipitation_probability_max: number[] }
+      daily: {
+        weather_code: number[]
+        temperature_2m_max: number[]
+        temperature_2m_min: number[]
+        precipitation_probability_max: number[]
+        wind_speed_10m_max?: number[]
+        wind_gusts_10m_max?: number[]
+      }
     }
     const code = d.daily.weather_code[0] ?? d.current.weather_code
     const rainProb = d.daily.precipitation_probability_max[0] ?? 0
+    const windMax = d.daily.wind_speed_10m_max?.[0] ?? 0
+    const gustMax = d.daily.wind_gusts_10m_max?.[0] ?? 0
     const text = wmoText(code)
     const w: Weather = {
       temp: Math.round(d.current.temperature_2m),
@@ -75,6 +87,8 @@ export async function getWeather(): Promise<Weather | null> {
       rainProb,
       text,
       rainy: /雨/.test(text) || rainProb >= 60,
+      wind: Math.round(windMax),
+      windy: windMax >= 29 || gustMax >= 50, // 5 级持续风或 7 级阵风
     }
     localStorage.setItem(WEATHER_KEY, JSON.stringify({ date: today, at: Date.now(), w }))
     return w
