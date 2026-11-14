@@ -480,7 +480,7 @@ export default function TodayPick({
         ) : (
           <button className="photo-btn" onClick={another}>🔄 换一套</button>
         )}
-        <button className="primary" disabled={busy || done || ids.length === 0} onClick={wear}>
+        <button className="primary" disabled={busy || done || (mode === 'today' && ids.length === 0)} onClick={wear}>
           {done ? mode === 'edit' ? '✓ 已保存' : '✓ 今天已记录' : mode === 'edit' || worn?.length ? '保存修改' : '就穿这套'}
         </button>
       </div>
