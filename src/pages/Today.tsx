@@ -62,7 +62,7 @@ function OutfitCard({
       <div className="outfit-head">
         <span className="outfit-date">{rec.date}{today ? ' · 今天' : ''}</span>
         <span className="muted">{rec.weather ?? ''} {open ? '收起' : '展开拆解'}</span>
-        <button type="button" className="photo-btn" onClick={(e) => { e.stopPropagation(); onEdit() }}>✏️ 修改</button>
+        <button type="button" className="outfit-edit" onClick={(e) => { e.stopPropagation(); onEdit() }}>修改</button>
       </div>
       {open ? (
         <div className="breakdown">
