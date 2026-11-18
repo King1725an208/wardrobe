@@ -1,7 +1,7 @@
 // 今日穿搭页 E2E（方案C 每类一张卡）：天气（模拟 18° 小雨）→ 推荐选中 → 点卡换一件 → 就穿这套 → 改一件 → 照片自动存 → 先拍照后选衣服
 // 先 npm run build，再：CHROME_PATH=... node tools/e2e/today-pick.mjs
 import { createServer } from 'node:http'
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -11,6 +11,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const DIST = path.join(ROOT, 'dist')
 const CHROME = process.env.CHROME_PATH || '/usr/bin/google-chrome'
 const SHOT = process.env.SHOT_DIR
+if (SHOT) await mkdir(SHOT, { recursive: true })
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json' }
 const server = createServer(async (req, res) => {
   let p = decodeURIComponent(req.url.split('?')[0]).replace(/^\/wardrobe/, '')
@@ -175,6 +176,34 @@ await tapUnselected('bottom')
 const tb = cats(await selected())
 ok(!tb.includes('dress') && tb.includes('top') && tb.includes('bottom'), '再选上衣+下装会去掉连衣裙', tb.join())
 
+// 外套可以叠穿两件：减到空、从空卡添加、加到上限后再减回一件
+const outerwearIds = (sel) => sel.filter((x) => x.startsWith('outerwear:')).map((x) => x.split(':')[1])
+await page.click('.outfit-card[data-cat="outerwear"] .oc-step[data-act="remove"]')
+await page.waitForSelector('.outfit-card[data-cat="outerwear"] .oc-empty')
+ok(outerwearIds(await selected()).length === 0, '减掉唯一外套后卡片为空', await page.$eval('.outfit-card[data-cat="outerwear"] .oc-empty', (e) => e.innerText))
+
+await page.click('.outfit-card[data-cat="outerwear"] .oc-empty')
+await page.waitForSelector('.outfit-card.open[data-cat="outerwear"] .pick-option')
+const firstOuter = await page.$eval('.outfit-card.open[data-cat="outerwear"] .pick-option:not(.on)', (e) => e.dataset.id)
+await page.click(`.outfit-card.open[data-cat="outerwear"] .pick-option[data-id="${firstOuter}"]`)
+await page.waitForFunction(() => !document.querySelector('.outfit-card.open[data-cat="outerwear"]'))
+ok(outerwearIds(await selected()).length === 1, '空白外套卡选一件后恢复单卡')
+
+await page.click('.outfit-card[data-cat="outerwear"] .oc-step[data-act="add"]')
+await page.waitForSelector('.outfit-card.open[data-cat="outerwear"] .pick-option')
+const secondOuter = await page.evaluate((cur) => {
+  const opts = [...document.querySelectorAll('.outfit-card.open[data-cat="outerwear"] .pick-option')]
+  return opts.map((o) => o.dataset.id).find((x) => !cur.includes(x)) ?? null
+}, [firstOuter])
+await page.click(`.outfit-card.open[data-cat="outerwear"] .pick-option[data-id="${secondOuter}"]`)
+await page.waitForSelector('.top-slots[data-cat="outerwear"]')
+ok(outerwearIds(await selected()).length === 2 && await page.$$eval('.top-slots[data-cat="outerwear"] .top-slot:not(.add)', (els) => els.length) === 2, '加第二件外套后显示两张分层小卡')
+ok(await page.$eval('.top-slots[data-cat="outerwear"] .top-slot.add', (e) => e.disabled), '两件外套时加号禁用（到上限）')
+if (SHOT) await page.screenshot({ path: `${SHOT}/outer-layers.png`, fullPage: true })
+await page.$eval('.top-slots[data-cat="outerwear"] .top-slot:not(.add) .ts-rm', (e) => e.click())
+await page.waitForFunction(() => !document.querySelector('.top-slots[data-cat="outerwear"]'))
+ok(outerwearIds(await selected()).length === 1, '减掉一张外套小卡后恢复单卡')
+
 const sel1 = await selected()
 await click('就穿这套')
 await page.waitForFunction(() => document.body.innerText.includes('今天已记录'))
@@ -206,33 +235,33 @@ await page.waitForSelector('.outfit-card.open[data-cat="top"] .pick-option')
 const addedTop = await pickFreshTop()
 ok(tops.length === 2 && tops.includes(addedTop), '按 ＋ 加一件上衣：变成两张小卡', tops.join())
 ok((await btnText()).includes('保存修改'), '加了一件后按钮变成「保存修改」')
-ok((await page.$$eval('.top-slots .top-slot:not(.add)', (els) => els.length)) === 2, '两张衣服小卡（＋ 空卡另算）')
+ok((await page.$$eval('.top-slots[data-cat="top"] .top-slot:not(.add)', (els) => els.length)) === 2, '两张衣服小卡（＋ 空卡另算）')
 
 // 再按 ＋ 空卡加第三件
-await page.click('.top-slots .top-slot.add')
+await page.click('.top-slots[data-cat="top"] .top-slot.add')
 await page.waitForSelector('.outfit-card.open[data-cat="top"] .pick-option')
 const thirdTop = await pickFreshTop()
 ok(tops.length === 3, '再加一件：3 件叠穿', tops.join())
 if (SHOT) await page.screenshot({ path: `${SHOT}/today-layers.png`, fullPage: true })
 
 // 加到上限 4 件：＋ 空卡禁用；减回 3 件恢复可点
-await page.click('.top-slots .top-slot.add')
+await page.click('.top-slots[data-cat="top"] .top-slot.add')
 await page.waitForSelector('.outfit-card.open[data-cat="top"] .pick-option')
 await pickFreshTop()
 tops = topsOf(await selected())
 ok(tops.length === 4, '加到 4 件：达到叠穿上限', tops.join())
-ok(await page.$eval('.top-slots .top-slot.add', (e) => e.disabled), '4 件时 ＋ 空卡禁用（到上限）')
+ok(await page.$eval('.top-slots[data-cat="top"] .top-slot.add', (e) => e.disabled), '4 件时 ＋ 空卡禁用（到上限）')
 await page.evaluate(() => {
-  const cards = [...document.querySelectorAll('.top-slots .top-slot:not(.add)')]
+  const cards = [...document.querySelectorAll('.top-slots[data-cat="top"] .top-slot:not(.add)')]
   cards[3].querySelector('.ts-rm').click()
 })
 await sleep(300)
 tops = topsOf(await selected())
-ok(tops.length === 3 && !(await page.$eval('.top-slots .top-slot.add', (e) => e.disabled)), '减回 3 件：＋ 空卡恢复可点', tops.join())
+ok(tops.length === 3 && !(await page.$eval('.top-slots[data-cat="top"] .top-slot.add', (e) => e.disabled)), '减回 3 件：＋ 空卡恢复可点', tops.join())
 
 // 点第 2 张小卡单独换一件（replace 模式：只有这一件打 ✓）
 const [t0, t1, t2] = tops
-await page.evaluate(() => document.querySelectorAll('.top-slots .top-slot:not(.add)')[1].click())
+await page.evaluate(() => document.querySelectorAll('.top-slots[data-cat="top"] .top-slot:not(.add)')[1].click())
 await page.waitForSelector('.outfit-card.open[data-cat="top"] .pick-option')
 const slotOnId = await page.$eval('.outfit-card.open[data-cat="top"] .pick-option.on', (e) => e.dataset.id)
 ok(slotOnId === t1, '点开小卡：当前这一件打 ✓', `${slotOnId} vs ${t1}`)
@@ -250,7 +279,7 @@ ok(tops.length === 3 && tops[0] === t0 && tops[1] === replTop && tops[2] === t2,
 
 // －：点小卡的 － 减一件
 await page.evaluate(() => {
-  const cards = [...document.querySelectorAll('.top-slots .top-slot:not(.add)')]
+  const cards = [...document.querySelectorAll('.top-slots[data-cat="top"] .top-slot:not(.add)')]
   cards[2].querySelector('.ts-rm').click()
 })
 await sleep(300)
@@ -259,7 +288,7 @@ ok(tops.length === 2, '点小卡 － 减一件：回到 2 件', tops.join())
 
 // 再减一件 → 1 件回到整宽卡；再点 － → 0 件变灰
 await page.evaluate(() => {
-  const cards = [...document.querySelectorAll('.top-slots .top-slot:not(.add)')]
+  const cards = [...document.querySelectorAll('.top-slots[data-cat="top"] .top-slot:not(.add)')]
   cards[1].querySelector('.ts-rm').click()
 })
 await sleep(300)
