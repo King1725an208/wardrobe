@@ -9,6 +9,8 @@ import { compose, missingHint, rank, reasonsFor, recIds, SLOT_ORDER, type Rec, t
 
 const ROWS: Category[] = ['outerwear', 'top', 'dress', 'bottom', 'shoes', 'bag', 'accessory']
 const label = (c: Category) => CATEGORIES.find((x) => x.key === c)?.label ?? c
+const LAYER_MAX: Partial<Record<Category, number>> = { top: 4, outerwear: 2 } // 上衣最多叠 4 件，外套最多 2 件
+const isLayer = (cat: Category) => LAYER_MAX[cat] !== undefined
 
 /** 品牌 + 子类 + 备注 的一行小字，卡片和选项里共用 */
 function metaOf(item: WardrobeItem): string {
@@ -22,7 +24,7 @@ function OcThumb({ item }: { item: WardrobeItem }) {
   return url ? <img src={url} alt="" /> : null
 }
 
-/** 收起态的分类卡：当前穿的那几件（上衣可叠穿多件，带 ＋/－ 控件） */
+/** 收起态的分类卡：当前穿的那几件（叠穿分类带 ＋/－ 控件） */
 function PickCard({
   cat,
   items,
@@ -80,14 +82,14 @@ function PickCard({
             {!multi && first.note && <span className="oc-note">备注：{first.note}</span>}
             <span className="oc-sub">点我换一件 ›</span>
           </span>
-          {cat === 'top' && onAdd && onRemove && (
+          {isLayer(cat) && onAdd && onRemove && (
             <span className="oc-ctl">
               <button
                 type="button"
                 className="oc-step"
                 data-act="add"
                 disabled={!canAdd}
-                title="加一件上衣"
+                title={`加一件${label(cat)}`}
                 onClick={(e) => {
                   e.stopPropagation()
                   onAdd()
@@ -101,7 +103,7 @@ function PickCard({
                 className="oc-step"
                 data-act="remove"
                 disabled={!canRemove}
-                title="减一件上衣"
+                title={`减一件${label(cat)}`}
                 onClick={(e) => {
                   e.stopPropagation()
                   onRemove()
@@ -145,12 +147,13 @@ function SubThumb({ item }: { item: WardrobeItem }) {
   return <span className="sub-thumb">{url && <img src={url} alt="" />}</span>
 }
 
-/** 上衣叠穿：一层一张小卡，可单独换/减，末尾一张 ＋ 空卡 */
-function TopSlotCard({ item, onOpen, onRemove }: { item: WardrobeItem; onOpen: () => void; onRemove: () => void }) {
+/** 叠穿：一层一张小卡，可单独换/减，末尾一张 ＋ 空卡 */
+function LayerSlotCard({ item, cat, onOpen, onRemove }: { item: WardrobeItem; cat: Category; onOpen: () => void; onRemove: () => void }) {
   const url = useBlobUrl(item.photo)
   return (
     <div
       className="top-slot"
+      data-cat={cat}
       role="button"
       tabIndex={0}
       onClick={onOpen}
@@ -166,40 +169,40 @@ function TopSlotCard({ item, onOpen, onRemove }: { item: WardrobeItem; onOpen: (
         <b>{metaOf(item) || '未命名'}</b>
         {item.note && <span className="ts-note">{item.note}</span>}
       </span>
-      <button type="button" className="ts-rm" aria-label="减一件上衣" onClick={(e) => { e.stopPropagation(); onRemove() }} onKeyDown={(e) => e.stopPropagation()}>
+      <button type="button" className="ts-rm" aria-label={`减一件${label(cat)}`} onClick={(e) => { e.stopPropagation(); onRemove() }} onKeyDown={(e) => e.stopPropagation()}>
         －
       </button>
     </div>
   )
 }
 
-function TopSlots({
-  tops,
+function LayerSlots({
+  cat,
+  layers,
   canAdd,
   onOpenSlot,
   onRemoveSlot,
   onAdd,
 }: {
-  tops: WardrobeItem[]
+  cat: Category
+  layers: WardrobeItem[]
   canAdd: boolean
   onOpenSlot: (i: number) => void
   onRemoveSlot: (i: number) => void
   onAdd: () => void
 }) {
   return (
-    <div className="top-slots" data-cat="top" data-ids={tops.map((t) => t.id).join(' ')}>
-      {tops.map((it, i) => (
-        <TopSlotCard key={it.id} item={it} onOpen={() => onOpenSlot(i)} onRemove={() => onRemoveSlot(i)} />
+    <div className="top-slots" data-cat={cat} data-ids={layers.map((t) => t.id).join(' ')}>
+      {layers.map((it, i) => (
+        <LayerSlotCard key={it.id} item={it} cat={cat} onOpen={() => onOpenSlot(i)} onRemove={() => onRemoveSlot(i)} />
       ))}
       <button type="button" className="top-slot add" disabled={!canAdd} onClick={onAdd}>
         <span className="ts-img"><span className="ts-plus">＋</span></span>
-        <span className="ts-meta"><span className="ts-empty">选上衣</span></span>
+        <span className="ts-meta"><span className="ts-empty">选{label(cat)}</span></span>
       </button>
     </div>
   )
 }
-
-const MAX_TOPS = 4 // 一天最多叠穿 4 件上衣
 
 /** 选一件：上衣/配饰可多选（上衣叠穿），其余同类只留一件；连衣裙和上衣/下装互斥 */
 function toggle(ids: string[], it: WardrobeItem, items: WardrobeItem[]): string[] {
@@ -306,14 +309,14 @@ export default function TodayPick({
     if (confirm(mode === 'edit' ? '删掉这天的照片？' : '删掉今天这张照片？')) void run(() => onSave(existing?.itemIds ?? [], undefined, existing?.note ?? ''))
   }
 
-  // 上衣叠穿：当前选中的上衣（按选择顺序）
-  const topIds = ids.filter((id) => items.find((i) => i.id === id)?.category === 'top')
-  const topItems = topIds.map((id) => items.find((i) => i.id === id)).filter((i): i is WardrobeItem => !!i)
-  const hasAddableTop = !!rows.find((r) => r.cat === 'top')?.list.some((i) => !ids.includes(i.id))
-  const canAddTop = topIds.length < MAX_TOPS && hasAddableTop
+  const layerIds = (cat: Category) => ids.filter((id) => items.find((i) => i.id === id)?.category === cat)
+  const layerItems = (cat: Category) => layerIds(cat).map((id) => items.find((i) => i.id === id)).filter((i): i is WardrobeItem => !!i)
+  const canAddLayer = (cat: Category) =>
+    layerIds(cat).length < (LAYER_MAX[cat] ?? 0) && !!rows.find((r) => r.cat === cat)?.list.some((i) => !ids.includes(i.id))
   // －：减一件，去掉最后加的那件（单卡模式）
-  const removeTop = () => {
-    const last = topIds[topIds.length - 1]
+  const removeLast = (cat: Category) => {
+    const layer = layerIds(cat)
+    const last = layer[layer.length - 1]
     if (last) setSel(ids.filter((x) => x !== last))
   }
   const closePick = () => {
@@ -322,24 +325,27 @@ export default function TodayPick({
     setEditSlot(null)
   }
   const openRow = (cat: Category, slot: number | 'add' | null = null) => {
-    setEditSlot(cat === 'top' ? slot : null)
+    setEditSlot(isLayer(cat) ? slot : null)
     setOpenCat(cat)
     setOpenSub(undefined)
   }
-  // 上衣按「层」选：替换第 slot 层，或 add 加一层；选完收起
-  const assignTop = (slot: number | 'add', it: WardrobeItem) => {
-    if (it.category !== 'top') return
+  // 按「层」选：替换第 slot 层，或 add 加一层；选完收起
+  const assignLayer = (cat: Category, slot: number | 'add', it: WardrobeItem) => {
+    if (!isLayer(cat) || it.category !== cat) return
+    const layer = layerIds(cat)
+    const max = LAYER_MAX[cat] ?? 0
     if (slot === 'add') {
-      if (ids.includes(it.id) || topIds.length >= MAX_TOPS) return
-      setSel([...ids.filter((x) => items.find((i) => i.id === x)?.category !== 'dress'), it.id])
+      if (ids.includes(it.id) || layer.length >= max) return
+      const next = cat === 'top' ? ids.filter((x) => items.find((i) => i.id === x)?.category !== 'dress') : ids
+      setSel([...next, it.id])
     } else {
-      const oldId = topIds[slot]
+      const oldId = layer[slot]
       if (!oldId || oldId === it.id) {
         closePick()
         return
       }
       // 已穿在别的层：同一件不能穿两层，直接忽略（避免丢一层）
-      if (topIds.some((x, i) => x === it.id && i !== slot)) {
+      if (layer.some((x, i) => x === it.id && i !== slot)) {
         closePick()
         return
       }
@@ -355,7 +361,7 @@ export default function TodayPick({
 
   // 点候选：上衣/配饰可多选留在展开态；其余选完收起卡片
   const pick = (it: WardrobeItem) => {
-    if (it.category === 'top' && !ids.includes(it.id) && topIds.length >= MAX_TOPS) return
+    if (isLayer(it.category) && !ids.includes(it.id) && layerIds(it.category).length >= (LAYER_MAX[it.category] ?? 0)) return
     setSel(toggle(ids, it, items))
     if (it.category !== 'accessory' && it.category !== 'top') {
       setOpenCat(null)
@@ -363,17 +369,18 @@ export default function TodayPick({
     }
   }
 
-  const slotOnId = typeof editSlot === 'number' ? (topIds[editSlot] ?? null) : null
+  const slotOnId = typeof editSlot === 'number' && openCat && isLayer(openCat) ? (layerIds(openCat)[editSlot] ?? null) : null
   const open = rows.find((r) => r.cat === openCat)
   const subs = open
     ? SUBTYPES[open.cat]?.map((x) => ({ ...x, list: open.list.filter((i) => i.subtype === x.key) })).filter((x) => x.list.length > 0) ?? []
     : []
   const options = open ? (openSub ? open.list.filter((i) => i.subtype === openSub) : subs.length ? [] : open.list) : []
-  // 上衣选衣卡里「已穿、不能重复选」的候选：加一层=已穿的都不行；换某层=别的层已穿的不能再选
-  const topTaken = (it: WardrobeItem) => {
-    if (openCat !== 'top' || editSlot === null) return false
+  // 叠穿选衣卡里「已穿、不能重复选」的候选：加一层=已穿的都不行；换某层=别的层已穿的不能再选
+  const layerTaken = (it: WardrobeItem) => {
+    if (!openCat || !isLayer(openCat) || editSlot === null) return false
+    const layer = layerIds(openCat)
     if (editSlot === 'add') return ids.includes(it.id)
-    return topIds.includes(it.id) && it.id !== slotOnId
+    return layer.includes(it.id) && it.id !== slotOnId
   }
 
   return (
@@ -389,10 +396,10 @@ export default function TodayPick({
           return (
             <div className="outfit-card open" key={r.cat} data-cat={r.cat}>
               <div className="oc-bar">
-                <b>{label(r.cat)}{r.cat === 'top' && r.picked.length > 1 ? ` · 已穿 ${r.picked.length} 件` : ''}</b>
+                <b>{label(r.cat)}{isLayer(r.cat) && r.picked.length > 1 ? ` · 已穿 ${r.picked.length} 件` : ''}</b>
                 <button className="oc-close" onClick={() => { setOpenCat(null); setOpenSub(undefined); setEditSlot(null) }}>‹ 收起</button>
               </div>
-              {r.cat === 'top' && r.picked.length >= MAX_TOPS && <div className="oc-hint">最多叠穿 {MAX_TOPS} 件，上衣小卡上的 － 可以减一件</div>}
+              {isLayer(r.cat) && r.picked.length >= (LAYER_MAX[r.cat] ?? Infinity) && <div className="oc-hint">最多叠穿 {LAYER_MAX[r.cat]} 件，{label(r.cat)}小卡上的 － 可以减一件</div>}
               {subs.length > 0 && !openSub && (
                 <div className="sub-grid">
                   {subs.map((x) => (
@@ -411,9 +418,9 @@ export default function TodayPick({
                     <PickOption
                       key={it.id}
                       item={it}
-                      on={openCat === 'top' && editSlot !== null ? it.id === slotOnId : ids.includes(it.id)}
-                      disabled={topTaken(it)}
-                      onTap={(x) => (openCat === 'top' && editSlot !== null ? assignTop(editSlot, x) : pick(x))}
+                      on={isLayer(openCat) && editSlot !== null ? it.id === slotOnId : ids.includes(it.id)}
+                      disabled={layerTaken(it)}
+                      onTap={(x) => (isLayer(openCat) && editSlot !== null ? assignLayer(openCat, editSlot, x) : pick(x))}
                     />
                   ))}
                 </div>
@@ -421,15 +428,17 @@ export default function TodayPick({
             </div>
           )
         }
-        if (r.cat === 'top' && topIds.length >= 2) {
+        if (isLayer(r.cat) && layerIds(r.cat).length >= 2) {
+          const layer = layerIds(r.cat)
           return (
-            <TopSlots
-              key="top"
-              tops={topItems}
-              canAdd={canAddTop}
-              onOpenSlot={(i) => openRow('top', i)}
-              onRemoveSlot={(i) => setSel(ids.filter((x) => x !== topIds[i]))}
-              onAdd={() => openRow('top', 'add')}
+            <LayerSlots
+              key={r.cat}
+              cat={r.cat}
+              layers={layerItems(r.cat)}
+              canAdd={canAddLayer(r.cat)}
+              onOpenSlot={(i) => openRow(r.cat, i)}
+              onRemoveSlot={(i) => setSel(ids.filter((x) => x !== layer[i]))}
+              onAdd={() => openRow(r.cat, 'add')}
             />
           )
         }
@@ -441,11 +450,11 @@ export default function TodayPick({
             on={r.picked.length > 0}
             count={r.picked.length}
             selIds={r.picked.map((i) => i.id)}
-            onOpen={() => openRow(r.cat, r.cat === 'top' ? (r.picked.length ? 0 : 'add') : null)}
-            onAdd={r.cat === 'top' ? () => openRow('top', 'add') : undefined}
-            onRemove={r.cat === 'top' ? removeTop : undefined}
-            canAdd={r.cat === 'top' ? canAddTop : true}
-            canRemove={r.cat === 'top' ? topIds.length > 0 : true}
+            onOpen={() => openRow(r.cat, isLayer(r.cat) ? (r.picked.length ? 0 : 'add') : null)}
+            onAdd={isLayer(r.cat) ? () => openRow(r.cat, 'add') : undefined}
+            onRemove={isLayer(r.cat) ? () => removeLast(r.cat) : undefined}
+            canAdd={isLayer(r.cat) ? canAddLayer(r.cat) : true}
+            canRemove={isLayer(r.cat) ? layerIds(r.cat).length > 0 : true}
           />
         )
       })}
