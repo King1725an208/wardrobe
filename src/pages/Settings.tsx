@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { useStore } from '../store'
 import { importDemoData } from '../demo'
-import { THEMES } from '../types'
+import { KEY_MASK, THEMES } from '../types'
 import { DEFAULT_AI_PROXY } from '../ai'
 import { exportItemsJson, parseItemsJson } from '../backup'
 import { bulkPutItems, saveOutfit } from '../db'
@@ -18,8 +18,7 @@ type SaveFilePicker = (opts: {
   types?: { description?: string; accept: Record<string, string[]> }[]
 }) => Promise<SaveFileHandle>
 
-/** 已保存的 API Key 在输入框里以此占位显示（脱敏）；保存时若未被改动则保留原值 */
-const KEY_MASK = 'XXXXXXXXXXXXX'
+const clean = (v: string) => v.normalize('NFKC').trim()
 
 const SWATCHES: Record<string, string[]> = {
   forest: ['#f4f6f0', '#7a9a7e', '#dfeadb', '#2f3a30'],
@@ -31,6 +30,7 @@ export default function SettingsPage() {
   const { settings, saveSettings, items, outfits, load } = useStore()
   const [demoMsg, setDemoMsg] = useState('')
   const [key, setKey] = useState(settings.doubaoApiKey ? KEY_MASK : '')
+  const [cleared, setCleared] = useState(false)
   const [model, setModel] = useState(settings.doubaoModel ?? 'doubao-seed-2.1-pro')
   const [proxy, setProxy] = useState(settings.aiProxyUrl ?? DEFAULT_AI_PROXY)
   const [savedOpen, setSavedOpen] = useState(false)
@@ -177,7 +177,7 @@ export default function SettingsPage() {
 
   const save = () => {
     saveSettings({
-      doubaoApiKey: key === KEY_MASK ? settings.doubaoApiKey : key || undefined,
+      doubaoApiKey: key === KEY_MASK ? settings.doubaoApiKey : clean(key) || undefined,
       doubaoModel: model || undefined,
       aiProxyUrl: proxy.trim() || undefined,
       removeBg,
@@ -219,10 +219,29 @@ export default function SettingsPage() {
       <input
         type="password"
         value={key}
-        onChange={(e) => setKey(e.target.value)}
+        onFocus={() => { if (key === KEY_MASK) setKey('') }}
+        onBlur={() => { if (!cleared && key === '' && settings.doubaoApiKey) setKey(KEY_MASK) }}
+        onChange={(e) => {
+          setKey(e.target.value)
+          if (e.target.value) setCleared(false)
+        }}
         placeholder="留空则关闭 AI 预填和云备份"
       />
-      {key === KEY_MASK && <p className="muted">已保存（脱敏显示），输入新口令可替换；清空后保存即删除</p>}
+      {key === KEY_MASK && <p className="muted">已保存（脱敏显示），点进去直接输入新口令即可替换</p>}
+      {settings.doubaoApiKey && (
+        <button
+          type="button"
+          className="muted"
+          style={{ fontSize: '0.8rem', padding: 0 }}
+          onClick={() => {
+            if (!window.confirm('清除已保存的口令？AI 识别和云备份会停用')) return
+            setKey('')
+            setCleared(true)
+          }}
+        >
+          清除口令
+        </button>
+      )}
       <p className="muted">走内置火山网关时填函数里设的口令（APP_TOKEN），AI 和云备份共用；自建直连中转时填方舟 API Key。</p>
       <label>模型</label>
       <input value={model} onChange={(e) => setModel(e.target.value)} />
