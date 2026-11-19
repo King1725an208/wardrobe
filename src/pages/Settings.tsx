@@ -18,7 +18,7 @@ type SaveFilePicker = (opts: {
   types?: { description?: string; accept: Record<string, string[]> }[]
 }) => Promise<SaveFileHandle>
 
-const clean = (v: string) => v.normalize('NFKC').replace(/\s+/g, '')
+const clean = (v: string) => v.normalize('NFKC').trim()
 
 const SWATCHES: Record<string, string[]> = {
   forest: ['#f4f6f0', '#7a9a7e', '#dfeadb', '#2f3a30'],
