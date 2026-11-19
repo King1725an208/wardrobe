@@ -3,6 +3,7 @@ import * as db from './db'
 import { enqueueAiTask, enqueueBgTask, holdBgTask, onAiTaskSettled, onBgTaskSettled, releaseBgTask, resumeBgTasks } from './bgtasks'
 import { normalizeCutout } from './image'
 import { createPool } from './pool'
+import { KEY_MASK } from './types'
 import type { AddEntry, NewItem, OutfitRecord, Settings, WardrobeItem } from './types'
 
 interface State {
@@ -52,13 +53,18 @@ export const useStore = create<State>((set, get) => ({
     void db.syncAddQueue(prev, next).catch((e) => console.warn('录入队列落盘失败：', e))
   },
   load: async () => {
-    const [items, outfits, settings, queueRows, bgTasks] = await Promise.all([
+    const [items, outfits, storedSettings, queueRows, bgTasks] = await Promise.all([
       db.listItems(),
       db.listOutfits(),
       db.getSettings(),
       db.listAddQueue(),
       db.listBgTasks(),
     ])
+    let settings = storedSettings
+    if (settings.doubaoApiKey?.startsWith(KEY_MASK)) {
+      settings = { ...settings, doubaoApiKey: settings.doubaoApiKey.slice(KEY_MASK.length) || undefined }
+      await db.saveSettings(settings)
+    }
     // 被杀/刷新时正在跑的条目（loading）不可能是完成态，重置回 idle；回到录入页自动补跑
     const addEntries = queueRows.map(({ seq: _seq, ...e }) => ({
       ...e,

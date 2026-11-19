@@ -1,6 +1,8 @@
 export type Category =
   | 'top' | 'bottom' | 'dress' | 'outerwear' | 'shoes' | 'bag' | 'accessory'
 
+export const KEY_MASK = 'XXXXXXXXXXXXX'
+
 export const CATEGORIES: { key: Category; label: string }[] = [
   { key: 'top', label: '上衣' },
   { key: 'bottom', label: '下装' },
